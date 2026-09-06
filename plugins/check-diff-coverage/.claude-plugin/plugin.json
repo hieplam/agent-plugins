@@ -1,0 +1,5 @@
+{
+  "name": "check-diff-coverage",
+  "description": "Measure uncovered diff vs main and drive a remediation loop. Supports .NET and Go.",
+  "version": "1.0.0"
+}

@@ -1,0 +1,3 @@
+# `bun install` here pulls ~207 MB (mermaid + jsdom). The lockfile is committed so the
+# install is reproducible; the tree itself never is.
+node_modules/

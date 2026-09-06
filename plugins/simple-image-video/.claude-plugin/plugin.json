@@ -1,0 +1,5 @@
+{
+  "name": "simple-image-video",
+  "description": "Animate one still image into a long, seamlessly-looping video with music (e.g. game key-art → 1-hour ambient YouTube loop) via sine-driven Remotion effects: halos, auras, particles, breathing.",
+  "version": "1.0.0"
+}

@@ -1,0 +1,19 @@
+{
+  "description": "Auto-capture every completed Workflow run as readable Markdown. Fires on Stop; the exporter reads only local run journals and self-limits to exactly-once per run, so it never blocks Stop. Output dir follows env precedence ($WF_EXPORT_DIR > $WF_JOURNAL_REPO/workflow-journal > ~/workflow-journal); set $WF_JOURNAL_REPO to also auto commit+push the render.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/skills/workflow-journal/scripts/wf-export.py",
+              "--hook"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

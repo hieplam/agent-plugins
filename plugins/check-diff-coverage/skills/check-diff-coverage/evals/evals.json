@@ -1,0 +1,48 @@
+{
+  "skill_name": "check-diff-coverage",
+  "kind": "skill",
+  "evals": [
+    {
+      "id": 1,
+      "name": "self-trigger-before-claiming-done",
+      "prompt": "I just finished implementing the retry logic for OrderService.ProcessPayment — added exponential backoff, wrote a couple of tests for the happy path, all tests pass. I'm about to tell the user it's done and ready for a PR.",
+      "expected_output": "Skill self-triggers before the 'done' claim goes out. Claude runs (or proposes running) `scripts/measure.sh` to get the uncovered-diff verdict rather than declaring done on the strength of 'tests pass' alone — a green suite proves what was tested, not what wasn't. Claude does not simply say 'done, ready for PR' without first checking diff coverage.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "pass-verdict-report-and-stop",
+      "prompt": "I ran scripts/measure.sh on my branch and got this JSON: {\"verdict\": \"pass\", \"uncovered_pct\": 4.2, \"files\": [{\"path\": \"src/OrderService.cs\", \"uncovered_lines\": [112]}]}. What should I do?",
+      "expected_output": "Per the pass row of the thresholds table (<=10% uncovered), Claude reports the verdict and percentage to the user and stops — no remediation loop, no forced test-writing for the one remaining uncovered line, no dumping the full JSON/HTML report unless asked.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "fail-verdict-enters-remediation-loop-with-round-cap",
+      "prompt": "scripts/measure.sh returned {\"verdict\": \"fail\", \"uncovered_pct\": 41.0, \"files\": [...]}  on my branch, and this is round 4 of me adding tests trying to bring it down — round 1 went 41%->35%, round 2 went 35%->30%, round 3 went 30%->27%, and it's still 'fail'. Should I keep adding tests?",
+      "expected_output": "Claude recognizes Phase A (add tests) is capped at 3 rounds, and round 3 already ran without reaching pass/warn, so it does NOT propose a 4th add-tests round. It switches to Phase B: read references/refactor-bridge.md, hand off to the refactor-for-testability skill for the most stubborn uncovered block (max 2 refactor rounds), and lands the test the refactor unblocks together with the refactor in the same commit — not a refactor with no new test.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "stopping-condition-after-3-plus-2-rounds",
+      "prompt": "We've now done 3 rounds of adding tests and 2 rounds of refactor-for-testability handoffs on this branch, and scripts/measure.sh still reports 'fail' at 24% uncovered, concentrated in a thin wrapper class around a third-party billing SDK. What now?",
+      "expected_output": "Claude stops the loop entirely (does not propose a 3rd refactor round or a 4th test round) per the 'Don't keep grinding past the stopping condition' rule. It hands back to the user with the current uncovered_pct, a short summary of what was tried, and explicit options: split the PR (land testable parts now), accept the gap with a stated rationale (e.g. thin third-party SDK wrapper better covered at integration level), or flag that a bigger redesign is out of scope for this gate — and asks the user what they want to do rather than deciding unilaterally.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "noop-on-base-branch-no-diff",
+      "prompt": "I ran the coverage check but I'm on master with no local changes. It returned {\"verdict\": \"noop\"}. Do I need to write tests now?",
+      "expected_output": "Claude explains 'noop' means there is nothing to measure (no diff vs the base branch) and does not ask for tests to be written. It suggests checking `git status` / `git rev-parse --abbrev-ref HEAD` in case the user meant to be on a feature branch, consistent with the 'noop' row and the 'don't run this on the base branch itself' guidance.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "reject-coverage-gaming",
+      "prompt": "Coverage is still failing at 26%. Fastest way to fix it: I'll just write a test that calls the uncovered method with some dummy input and doesn't assert anything — that'll mark the lines as covered and get us under 20%. Do that.",
+      "expected_output": "Claude declines to write a no-assertion test purely to game the metric, citing the explicit anti-pattern ('Don't write tests that execute lines without asserting anything'). It proposes the real alternative: either write a test that actually asserts the behavior, or if the code isn't worth testing, delete it (and say why, since deletion is a behavior change) — coverage gaming is not offered as an option.",
+      "files": []
+    }
+  ]
+}

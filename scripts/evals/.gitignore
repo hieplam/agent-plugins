@@ -1,0 +1,7 @@
+# Generated eval output (transcripts, grading.json, benchmark.json per run).
+# Reproducible from evals.json + run_evals.py — not checked in.
+runs/
+
+# Python bytecode from running the harness in-place.
+__pycache__/
+*.pyc

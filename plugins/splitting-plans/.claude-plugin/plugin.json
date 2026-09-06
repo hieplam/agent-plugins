@@ -1,0 +1,5 @@
+{
+  "name": "splitting-plans",
+  "description": "Split large monolithic implementation plans into isolated, dependency-aware sub-plans for parallel subagents",
+  "version": "1.0.0"
+}

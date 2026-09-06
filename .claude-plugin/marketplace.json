@@ -1,0 +1,43 @@
+{
+  "name": "agent-plugins",
+  "owner": {
+    "name": "Todd Lam"
+  },
+  "plugins": [
+    {
+      "name": "splitting-plans",
+      "source": "./plugins/splitting-plans",
+      "description": "Split large monolithic implementation plans into isolated, dependency-aware sub-plans for parallel subagents"
+    },
+    {
+      "name": "check-diff-coverage",
+      "source": "./plugins/check-diff-coverage",
+      "description": "Measure uncovered diff vs main and drive a remediation loop. Supports .NET and Go."
+    },
+    {
+      "name": "refactor-for-testability",
+      "source": "./plugins/refactor-for-testability",
+      "description": "Refactor untestable code into a shape that can be tested before changing behaviour."
+    },
+    {
+      "name": "research-to-blog",
+      "source": "./plugins/research-to-blog",
+      "description": "Turn a session insight or a bare topic into a bilingual EN+VI research note and published GitHub Pages blog posts (agent; auto-detects format-and-publish vs self-run deep research)."
+    },
+    {
+      "name": "workflow-journal",
+      "source": "./plugins/workflow-journal",
+      "description": "Export Claude Code Workflow runs to readable Markdown (every agent's full prompt + result + cost) and auto-capture each run via a Stop hook."
+    },
+    {
+      "name": "simple-image-video",
+      "source": "./plugins/simple-image-video",
+      "description": "Animate one still image into a long, seamlessly-looping video with music (e.g. game key-art → 1-hour ambient YouTube loop) via sine-driven Remotion effects: halos, auras, particles, breathing."
+    },
+    {
+      "name": "explaining",
+      "source": "./plugins/explaining",
+      "description": "Two eval-proven rules (term discipline + grounding) that make explanatory prose readable without the writer's context; rule candidates that lost or regressed in the isolated A/B eval are excluded."
+    }
+  ]
+}

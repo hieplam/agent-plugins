@@ -1,0 +1,41 @@
+{
+  "skill_name": "splitting-plans",
+  "kind": "skill",
+  "evals": [
+    {
+      "id": 1,
+      "name": "trigger-on-large-multi-subsystem-plan",
+      "prompt": "I just finished brainstorming a feature: sync a local Obsidian vault with a remote Notion workspace, two-way. The plan covers 11 tasks across 4 independent areas — auth/token storage, the Obsidian-side file watcher, the Notion-side API client, and a conflict-resolution merge engine — and I estimate the write-up will run past 1000 lines once I fill in TDD steps for each task. I'm about to start writing docs/superpowers/plans/2026-07-07-obsidian-notion-sync.md as one big file. Should I do anything differently before I start writing?",
+      "expected_output": "Skill triggers (>=8 tasks AND >~800 projected lines AND >=2 independent subsystems are all present — any one alone is enough per the decision rule, and here all three fire). Claude proposes running splitting-plans BEFORE writing-plans: build the dependency graph from the 4 areas, compute waves, assign disjoint owns_files per bundle, and generate a folder with an orchestrator README + skeleton sub-plans rather than one monolithic plan file. Does NOT just start writing the single big plan file as asked.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "no-trigger-on-small-single-file-plan",
+      "prompt": "Quick plan needed: add a `--verbose` flag to the existing `scripts/deploy.sh` script that prints each step before running it. One file, maybe 3 small changes (parse flag, guard the print statements, update the help text). Can you write the plan?",
+      "expected_output": "Skill should NOT trigger — well under 8 tasks, well under ~800 projected lines, a single file/subsystem, and no parallel-intent language from the user. Claude proceeds straight to a normal single plan file (e.g. via writing-plans) without proposing a split, bundles, waves, or an orchestrator README for a 3-step single-file change.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "wave-computation-and-owns-files-disjointness",
+      "prompt": "I split a plan into 5 bundles: 01-schema (owns db/schema.sql, prereqs: none), 02-api (owns src/api/*.go, prereqs: 01), 03-cli (owns src/cli/*.go, prereqs: 01), 04-docs (owns docs/api.md, prereqs: 02, 03), 05-tests (owns tests/integration/*.go, prereqs: 02). I listed 03-cli's owns_files as src/cli/*.go AND src/api/client.go because the CLI imports the API client package. Is this plan ready to hand off to parallel subagents?",
+      "expected_output": "Claude flags the overlap: 03-cli's owns_files includes src/api/client.go, which collides with 02-api's ownership of src/api/*.go (the anti-pattern from SKILL.md section 9, 'overlapping owned tools' — two bundles editing the same file). Claude proposes a fix (drop src/api/client.go from 03-cli's owns_files since 03 only needs to read/import it, not edit it, or move that file to a dedicated shared bundle) and correctly derives the wave diagram: Wave A = 01, Wave B = 02+03 (both depend only on 01), Wave C = 04+05 (04 needs both 02,03; 05 only needs 02, but is still schedulable once 02 finishes — Claude should note 05 could start as soon as 02 is DONE, in parallel with 03/04, rather than lumping it strictly with 04).",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "stale-lock-30-minute-threshold",
+      "prompt": "I'm picking up work as a subagent on bundle 04-notifications. Its YAML says status: LOCKED, locked_by: agent-b, locked_at: 2026-07-07T10:00:00Z. The current time is 2026-07-07T10:22:00Z. Can I take over this bundle?",
+      "expected_output": "Claude says no — only 22 minutes have elapsed since locked_at, under the committed 30-minute staleness threshold from SKILL.md section 11, so the lock is not yet considered stale. The agent should pick a different AVAILABLE bundle (or wait) rather than taking over 04-notifications. Claude does NOT invent a different threshold (e.g. 15 or 60 minutes) and does NOT immediately mark it BLOCKED before 30 minutes have passed.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "cross-bundle-contract-rename-touches-dependents",
+      "prompt": "Bundle 02-api currently exposes a function called `FetchUser`. I want to rename it to `GetUserByID` because it's clearer. Bundle 03-cli and Bundle 05-tests both call `FetchUser` per the contracts table in the main README. What's the right way to make this change inside the splitting-plans model?",
+      "expected_output": "Claude does NOT treat this as a same-bundle-only edit. Per SKILL.md section 6/9, a shared identifier used by >=2 bundles is a frozen contract once published — the rename must be its own bundle (or an amendment) whose owned scope explicitly lists every sub-plan that references the old name (02-api, 03-cli, 05-tests), updating the contracts table and all call sites in one atomic pass — not silently renamed in 02-api alone, which would silently break 03-cli and 05-tests (the 'hidden cross-bundle dependency' anti-pattern).",
+      "files": []
+    }
+  ]
+}

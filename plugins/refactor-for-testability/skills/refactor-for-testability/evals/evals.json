@@ -1,0 +1,26 @@
+{
+  "skill_name": "refactor-for-testability",
+  "evals": [
+    {
+      "id": 1,
+      "name": "critical-change-in-untestable-code",
+      "prompt": "We have a security bug in UserController.cs — the password reset endpoint doesn't check whether the token is expired, so an old reset link still works. I need this fixed today. Heads up: the controller has no unit tests because it talks to static helpers (UserHelper.GetUser, MailHelper.Send) that hit real services, so the existing code can't really be tested as-is. Please fix the bug.",
+      "expected_output": "Skill triggers. Claude recognises this as critical-but-untestable, applies the 'think twice' check, then asks permission to refactor (likely: introduce IUserService / IMailService and inject), drafts a test plan covering the expired-token case, refactors behavior-preserving, writes tests, then makes the actual security fix. Does NOT silently patch the bug inside the untestable code.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "trivial-change-in-untestable-code",
+      "prompt": "Tiny one — there's a typo in LegacyAuthHandler.cs around line 87. The error message says 'Invlaid token' and should say 'Invalid token'. Just fix it. Heads up the class is a 600-line god object with no tests and uses statics everywhere, but I really only need the typo fixed.",
+      "expected_output": "Skill should trigger but the 'think twice' step should win — a string literal typo is not worth refactoring a 600-line class for. Claude should propose to fix the typo as a one-line change, optionally noting that proper tests would require a refactor but explicitly recommending against it for a typo. No refactor proposal, no permission ask for refactor.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "feature-add-with-tight-coupling",
+      "prompt": "I need to add retry logic (3 attempts with exponential backoff) to OrderService.ProcessPayment. Right now ProcessPayment news up StripeClient inline (`var client = new StripeClient(apiKey);`) and calls Charge on it. There are no tests for this method. Please add the retry logic.",
+      "expected_output": "Skill triggers. Claude proposes the smallest seam: inject IPaymentClient (or wrap StripeClient behind an interface), asks permission with a one-sentence why + blast radius, drafts a test plan including retry-on-failure cases, refactors to use injection (behavior-preserving), writes tests for happy path + retry-then-success + retry-then-fail, THEN adds the retry logic with tests. Refactor commit and feature commit are conceptually separated.",
+      "files": []
+    }
+  ]
+}

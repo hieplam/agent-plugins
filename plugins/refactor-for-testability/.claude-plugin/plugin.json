@@ -1,0 +1,5 @@
+{
+  "name": "refactor-for-testability",
+  "description": "Refactor untestable code into a shape that can be tested before changing behaviour.",
+  "version": "1.0.0"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "research-to-blog",
+  "description": "Turn a session insight or a bare topic into a bilingual EN+VI research note and published GitHub Pages blog posts. Auto-detects: format-and-publish provided substance, or self-run a web deep-dive first.",
+  "version": "1.0.0"
+}

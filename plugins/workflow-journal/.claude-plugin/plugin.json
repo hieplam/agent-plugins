@@ -1,0 +1,6 @@
+{
+  "name": "workflow-journal",
+  "description": "Export Claude Code Workflow runs to readable Markdown (every agent's full prompt + result + cost), auto-capture each run via a Stop hook, and optionally git-sync the archive across machines (set WF_JOURNAL_REPO).",
+  "version": "1.2.0",
+  "hooks": "./hooks/hooks.json"
+}

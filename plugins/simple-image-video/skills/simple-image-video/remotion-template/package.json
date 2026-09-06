@@ -1,0 +1,21 @@
+{
+  "name": "simple-image-video-template",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion template for the simple-image-video skill: animate one still image into a seamless loop.",
+  "scripts": {
+    "render": "remotion render src/index.tsx ImageLoop",
+    "still": "remotion still src/index.tsx ImageLoop",
+    "studio": "remotion studio src/index.tsx"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.484",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.5.0"
+  }
+}

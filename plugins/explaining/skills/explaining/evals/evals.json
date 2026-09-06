@@ -1,0 +1,51 @@
+{
+  "skill_name": "explaining",
+  "kind": "skill",
+  "memory_fixture": "memory-fixture/CLAUDE.md",
+  "evals": [
+    {
+      "id": 1,
+      "name": "nats-jetstream-acks-terms-introduced-and-claims-grounded",
+      "prompt": "Explain how NATS JetStream consumer acknowledgment works and what happens when acks are late or missing.",
+      "expected_output": "Every technical term outside a senior backend developer's general baseline (e.g. ack floor, AckExplicit/AckAll/AckNone, ack wait, redelivery, MaxDeliver, WorkQueue semantics) gets a brief definition or lead-in sentence at its first use — no bare jargon drops mid-explanation. Abstract claims about delivery guarantees or failure behavior are anchored by a concrete example, config/code snippet, or verifiable fact rather than left as unanchored generalities; specifics the model cannot verify are marked as such instead of asserted.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "dotnet-channel-backpressure-terms-introduced-and-claims-grounded",
+      "prompt": "Explain backpressure in .NET Channel<T> and when bounded vs unbounded channels matter.",
+      "expected_output": "Every domain-specific term (e.g. backpressure, bounded/unbounded channel, BoundedChannelFullMode, WriteAsync suspension, rendezvous) is introduced with a short definition or contextual lead-in at first use. Abstract claims (e.g. about memory growth, producer/consumer speed mismatch, when bounding matters) are each paired with a code snippet or concrete worked example; the answer does not pad with definitions of things a senior .NET developer already knows (variables, async/await basics).",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "tribe-overall-flow-illustrated",
+      "prompt": "Read tribe-README.md in this directory. Explain, for a developer who has never seen this system, how work actually moves through the tribe end to end: who hands work to whom, what each role returns to its caller, which paths are conditional, and where the boundary between the two reviewer roles falls. Make the whole flow understandable.",
+      "expected_output": "The response makes the multi-actor flow understandable AND leaves behind a rendered illustration the reader can open: a self-contained .html file written into the working directory whose mermaid source sits in an element with class=\"mermaid\" and parses. The diagram covers the dispatch chain across the roles and at least one conditional path. The accompanying prose obeys the skill's existing rules — every role name and piece of jargon is defined or contextualized at first use, and the explanation of who hands work to whom and what each role returns is specific and internally consistent rather than vague or hand-wavy. Producing only a fenced code block, or only prose with no file on disk, does not satisfy this.",
+      "files": [
+        { "path": "tribe-README.md", "source": "plugins/explaining/skills/explaining/evals/fixtures/tribe-README.md" }
+      ],
+      "checks": [
+        {
+          "name": "html-mermaid-parses",
+          "command": "bun {skill_dir}/scripts/validate-mermaid.ts --html-glob *.html"
+        }
+      ],
+      "artifacts": ["*.html"]
+    },
+    {
+      "id": 4,
+      "name": "write-ahead-log-explained-and-blind-read",
+      "prompt": "Explain how a write-ahead log keeps a database durable and crash consistent: what gets written and in what order, how a checkpoint interacts with log truncation, what an fsync actually guarantees, and how recovery replays the log after a crash. Write it for a backend developer who has never implemented one.",
+      "expected_output": "A long, self-contained explanation of write-ahead logging that a backend developer with no prior exposure can follow: every term outside a general backend baseline (write-ahead log, checkpoint, log truncation, fsync, redo, log sequence number, durability, crash consistency) is defined or contextualized at first use, and each abstract claim about ordering, durability or recovery is anchored by a concrete worked example, a record-layout or code snippet, or a verifiable fact rather than asserted. The deliverable is left on disk as a file in the working directory rather than existing only in the reply, and the reply ends with exactly one line reporting how its own pre-delivery review ended: a PASS after some number of rounds, an end-at-cap listing the open blocking findings, or a one-line statement that the review could not run in this session. A reply that never writes a file, or that never reports a review outcome, does not satisfy this.",
+      "files": [],
+      "checks": [
+        {
+          "name": "blind-reader-review-log",
+          "command": "bun {skill_dir}/scripts/check-review-log.ts --log-glob *.review.jsonl --prompt 'Explain how a write-ahead log keeps a database durable and crash consistent: what gets written and in what order, how a checkpoint interacts with log truncation, what an fsync actually guarantees, and how recovery replays the log after a crash. Write it for a backend developer who has never implemented one.'"
+        }
+      ],
+      "artifacts": ["*.md", "*.review.jsonl", "*.html"]
+    }
+  ]
+}

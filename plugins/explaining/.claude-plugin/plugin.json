@@ -1,0 +1,5 @@
+{
+  "name": "explaining",
+  "description": "Two eval-proven rules (term discipline + grounding) that make explanatory prose readable by someone without the writer's context. Rules retained only if they beat baseline in an isolated A/B eval; refuted candidates excluded.",
+  "version": "1.0.0"
+}
