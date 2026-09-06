@@ -1,6 +1,6 @@
 # agent-plugins
 
-Todd Lam's general-purpose Claude Code agents and skills, packaged as installable plugins. The
+General-purpose Claude Code agents and skills, packaged as installable plugins. The
 repo is the single source of truth; `.claude-plugin/marketplace.json` is the authoritative
 registry.
 
