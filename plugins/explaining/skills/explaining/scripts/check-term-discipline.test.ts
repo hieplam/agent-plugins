@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   AFTER_WINDOW,
   EXIT_CODE,
+  allowedUndefined,
   classifyTerm,
   evaluateReply,
   findTerm,
@@ -130,7 +131,8 @@ describe('hasAfterCue', () => {
     expect(hasAfterCue(' — the cache of pages')).toBe(true);
     expect(hasAfterCue(' - the cache of pages')).toBe(true);
     expect(hasAfterCue(' update — a heap-only-tuple update')).toBe(true);
-    expect(hasAfterCue(' pressure grows — index pages evict')).toBe(false);
+    expect(hasAfterCue(' in front — PgBouncer lets thousands share')).toBe(true);
+    expect(hasAfterCue(' pressure grows a lot — index pages evict')).toBe(false);
   });
 
   test('a colon one word later is NOT a cue (the bold-lead "Buffer pool pressure:" shape)', () => {
@@ -140,6 +142,7 @@ describe('hasAfterCue', () => {
   test('an opening parenthesis within one word is a cue', () => {
     expect(hasAfterCue(' (write-ahead log) is')).toBe(true);
     expect(hasAfterCue(' update (heap-only tuple)')).toBe(true);
+    expect(hasAfterCue(' on disk (a sorted tree of pages)')).toBe(true);
     expect(hasAfterCue(' engines like Postgres (usually)')).toBe(false);
   });
 
@@ -156,10 +159,14 @@ describe('hasAfterCue', () => {
     expect(hasAfterCue(` ${'w '.repeat(AFTER_WINDOW + 1)}is late`)).toBe(false);
   });
 
-  test('a knob verb right after a setting name says what it does', () => {
+  test('a does-verb right after a setting, tool or mechanism says what it does', () => {
     expect(hasAfterCue('` caps redelivery.')).toBe(true);
     expect(hasAfterCue(' controls how long the server waits')).toBe(true);
+    expect(hasAfterCue('` rewrites the table compactly')).toBe(true);
+    expect(hasAfterCue('* log an entire page image')).toBe(true); // base form counts too
+    expect(hasAfterCue('` replaces the bool on Task')).toBe(true);
     expect(hasAfterCue(' pressure caps nothing')).toBe(false);
+    expect(hasAfterCue(' uses an index only when it helps')).toBe(false);
   });
 
   test('closing decoration of the term itself is skipped before looking', () => {
@@ -194,6 +201,12 @@ describe('hasBeforeCue', () => {
     expect(hasBeforeCue('it is called that only when the very busy ')).toBe(false);
   });
 
+  test('a predicative copula or "marked as" before the term', () => {
+    expect(hasBeforeCue('A modified page is ')).toBe(true);
+    expect(hasBeforeCue('such pages are marked as ')).toBe(true);
+    expect(hasBeforeCue('it fights over the same ')).toBe(false);
+  });
+
   test('an extra cue works on the before side too', () => {
     expect(hasBeforeCue('được gọi là ', ['gọi là'])).toBe(true);
   });
@@ -205,9 +218,13 @@ describe('isParentheticalExpansion', () => {
     expect(isParentheticalExpansion('the write-ahead log (`', '`)')).toBe(true);
   });
 
-  test('a parenthesis with nothing before it, or more inside it, is not an expansion', () => {
+  test('the term opening a parenthesis followed by a comma still counts', () => {
+    expect(isParentheticalExpansion('holds a few back (`', '`, default 3)')).toBe(true);
+  });
+
+  test('a parenthesis with nothing before it, or the term not opening it, is not an expansion', () => {
     expect(isParentheticalExpansion('(', ')')).toBe(false);
-    expect(isParentheticalExpansion('the log (', ', see below)')).toBe(false);
+    expect(isParentheticalExpansion('the log (see the ', ' below)')).toBe(false);
   });
 });
 
@@ -266,8 +283,25 @@ describe('formatReport', () => {
     expect(report).toContain('DEFINED   "latch"');
     expect(report).toContain('UNDEFINED "vacuum" — Vacuum runs.');
     expect(report).toContain('UNUSED    "WAL"');
-    expect(report.split('\n').at(-1)).toBe('INVALID: 1 undefined of 2 used (3 listed, max-undefined 0)');
+    expect(report.split('\n').at(-1)).toBe('INVALID: 1 undefined of 2 used (3 listed, 0 allowed)');
     expect(formatReport(evaluation, 1).split('\n').at(-1)).toStartWith('VALID:');
+  });
+});
+
+describe('allowedUndefined', () => {
+  test('the larger of the absolute allowance and the share of used terms', () => {
+    expect(allowedUndefined(6, 0, 1 / 3)).toBe(2);
+    expect(allowedUndefined(9, 0, 1 / 3)).toBe(3);
+    expect(allowedUndefined(2, 0, 1 / 3)).toBe(0);
+    expect(allowedUndefined(2, 1, 1 / 3)).toBe(1);
+    expect(allowedUndefined(11, 0, 0)).toBe(0);
+  });
+
+  test('a baseline mass drop stays refused under the ratio; the disciplined rewrite passes', () => {
+    const baseline = evaluateReply(BASELINE_REPLY, INDEX_TERMS);
+    expect(baseline.undefined).toBeGreaterThan(allowedUndefined(baseline.used, 0, 1 / 3));
+    const good = evaluateReply(DISCIPLINED_REPLY, INDEX_TERMS);
+    expect(good.undefined).toBeLessThanOrEqual(allowedUndefined(good.used, 0, 1 / 3));
   });
 });
 
@@ -283,6 +317,11 @@ describe('parseArgs', () => {
     expect(args.terms).toEqual(['a', 'b', 'c']);
     expect(args.cues).toEqual(['là', 'gọi là']);
     expect(args.maxUndefined).toBe(2);
+  });
+
+  test('reads --max-undefined-ratio and rejects one outside [0, 1]', () => {
+    expect(parseArgs(['--reply', 'r', '--terms', 'a', '--max-undefined-ratio', '0.34']).maxUndefinedRatio).toBe(0.34);
+    expect(parseArgs(['--reply', 'r', '--terms', 'a', '--max-undefined-ratio', '2']).error).toContain('--max-undefined-ratio');
   });
 
   test('rejects a non-integer --max-undefined and an unknown flag', () => {

@@ -163,6 +163,12 @@ to 600 words or more. Shorter answers keep the self-check alone.
 file, never on pasted text: the path is the reader's entire input, and that is what keeps the
 reader blind.
 
+**The file is for the reader, not a substitute for the reply.** When the user asked for text —
+a PR description, a commit message, a comment, a paragraph — the final reply carries that text
+in full; the file on disk is the copy the review ran on, and pointing at it ("written to
+`PR_DESCRIPTION.md`, text above") is not delivering it. A file is the deliverable only when the
+user asked for a file or the content cannot live in a message (a rendered diagram).
+
 **Dispatch one blind reader per round.** A fresh subagent — never a fork of this session, never
 this session itself — on `sonnet` by default, with `run_in_background: false`, and wait for its
 reply: a backgrounded reader never returns a verdict in a headless session. Its entire brief is

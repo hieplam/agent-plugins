@@ -2,7 +2,7 @@
   "skill_name": "todd-way",
   "kind": "output-style",
   "memory_fixture": "../skills/explaining/evals/memory-fixture/CLAUDE.md",
-  "oracle": "Term discipline is judged on the REPLY the user reads, by check-term-discipline.ts first and the grader second. A listed term the reply never uses needs no definition. A listed term the reply uses counts as introduced only when the sentence of its first use (or the heading it sits under) states in plain words what it is: an appositive, a parenthetical, an acronym expansion, or an 'X is/means ...' clause. Using a term in a sentence that happens to make sense, or naming a product that has it ('MVCC engines like Postgres'), is NOT an introduction. Under-checking by the script is by design; the grader applies the same oracle to what the script cannot see.",
+  "oracle": "Term discipline is judged on the REPLY the user reads, by check-term-discipline.ts first and the grader second. A listed term the reply never uses needs no definition. A listed term the reply uses counts as introduced only when the sentence of its first use (or the heading it sits under) states in plain words what it is: an appositive, a parenthetical, an acronym expansion, or an 'X is/means ...' clause. Using a term in a sentence that happens to make sense, or naming a product that has it ('MVCC engines like Postgres'), is NOT an introduction. The script is a floor: it refuses a reply that leaves more than a third of the listed terms it uses bare (and always tolerates one) (a baseline reply leaves 60–100% bare), and under-checking below that line is by design; the grader applies the same oracle to what the script cannot see.",
   "evals": [
     {
       "id": 1,
@@ -11,8 +11,14 @@
       "prompt": "Look at api-a.yaml and api-b.yaml in this directory. Which one sets the longer request timeout, and what is the value?",
       "expected_output": "A direct operational answer: it names api-b.yaml and 90s (api-a.yaml sets 30s) in the first sentence, in at most about three sentences of plain prose. It does NOT open with a preamble ('Let me check...', 'I'll look at...'), does NOT restate the question, does NOT close with a recap, and does NOT decorate a two-value comparison with a table or headers. It also does not treat this as explanatory work: no .html diagram, no explanation.md draft, no blind-reader review line — the question asks what a value is, not how something works. A long, sectioned, or diagram-bearing answer fails this case even if the timeout values are correct.",
       "files": [
-        { "path": "api-a.yaml", "content": "service: api-a\nhttp:\n  request_timeout: 30s\n  retries: 2\n" },
-        { "path": "api-b.yaml", "content": "service: api-b\nhttp:\n  request_timeout: 90s\n  retries: 0\n" }
+        {
+          "path": "api-a.yaml",
+          "content": "service: api-a\nhttp:\n  request_timeout: 30s\n  retries: 2\n"
+        },
+        {
+          "path": "api-b.yaml",
+          "content": "service: api-b\nhttp:\n  request_timeout: 90s\n  retries: 0\n"
+        }
       ],
       "checks": [
         {
@@ -31,7 +37,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'ack floor,AckExplicit,AckAll,AckNone,ack wait,AckWait,redelivery,MaxDeliver,MaxAckPending,work queue,WorkQueue,pull consumer,push consumer,durable consumer,NAK,in-progress ack'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'ack floor,AckExplicit,AckAll,AckNone,ack wait,AckWait,redelivery,MaxDeliver,MaxAckPending,work queue,WorkQueue,pull consumer,push consumer,durable consumer,NAK,in-progress ack'"
         }
       ]
     },
@@ -45,7 +51,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'B-tree,MVCC,HOT,WAL,write-ahead log,checkpoint,page split,latch,buffer pool,vacuum,dead tuple,bloat,planner,seq scan,fill factor,write amplification,change buffer'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'B-tree,MVCC,HOT,WAL,write-ahead log,checkpoint,page split,latch,buffer pool,vacuum,dead tuple,bloat,planner,seq scan,fill factor,write amplification,change buffer'"
         }
       ]
     },
@@ -56,7 +62,10 @@
       "prompt": "Read tribe-README.md in this directory. Explain, for a developer who has never seen this system, how work actually moves through the tribe end to end: who hands work to whom, what each role returns to its caller, which paths are conditional, and where the boundary between the two reviewer roles falls. Make the whole flow understandable.",
       "expected_output": "The response makes the multi-actor flow understandable AND leaves behind a rendered illustration the reader can open: a self-contained .html file written into the working directory whose mermaid source sits in an element with class=\"mermaid\" and parses. The diagram covers the dispatch chain across the roles and at least one conditional path. The accompanying prose obeys the style's other rules — every role name and piece of jargon is defined or contextualized at first use, the explanation of who hands work to whom and what each role returns is specific rather than hand-wavy, and it leads with the answer instead of a preamble. Producing only a fenced code block, or only prose with no file on disk, does not satisfy this.",
       "files": [
-        { "path": "tribe-README.md", "source": "plugins/explaining/skills/explaining/evals/fixtures/tribe-README.md" }
+        {
+          "path": "tribe-README.md",
+          "source": "plugins/explaining/skills/explaining/evals/fixtures/tribe-README.md"
+        }
       ],
       "checks": [
         {
@@ -64,7 +73,9 @@
           "command": "bun {skill_dir}/skills/explaining/scripts/validate-mermaid.ts --html-glob *.html"
         }
       ],
-      "artifacts": ["*.html"]
+      "artifacts": [
+        "*.html"
+      ]
     },
     {
       "id": 5,
@@ -80,10 +91,14 @@
         },
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'LSN,log sequence number,redo,undo,ARIES,torn write,full-page write,page cache,dirty page,group commit,fsync barrier,double-write buffer'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'LSN,log sequence number,redo,undo,ARIES,torn write,full-page write,dirty,group commit,fsync barrier,double-write buffer'"
         }
       ],
-      "artifacts": ["*.md", "*.review.jsonl", "*.html"]
+      "artifacts": [
+        "*.md",
+        "*.review.jsonl",
+        "*.html"
+      ]
     },
     {
       "id": 6,
@@ -95,7 +110,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'dead tuple,MVCC,xmin horizon,bloat,visibility map,free space map,replication slot,hot_standby_feedback,wraparound,pg_repack,VACUUM FULL,idle in transaction,autovacuum_vacuum_scale_factor,autovacuum_vacuum_threshold,HOT'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'dead tuple,MVCC,xmin horizon,bloat,visibility map,free space map,replication slot,hot_standby_feedback,wraparound,pg_repack,VACUUM FULL,idle in transaction,autovacuum_vacuum_scale_factor,autovacuum_vacuum_threshold,HOT'"
         }
       ]
     },
@@ -109,7 +124,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'max_connections,superuser_reserved_connections,connection pooler,PgBouncer,pgbouncer,transaction pooling,session pooling,idle in transaction,backend process'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'max_connections,superuser_reserved_connections,connection pooler,PgBouncer,transaction pooling,session pooling,idle in transaction,backend process'"
         }
       ]
     },
@@ -120,15 +135,20 @@
       "prompt": "Write the PR description for the change in change.diff in this directory.",
       "expected_output": "A PR description a reviewer who did not write the change can follow: what changed (retry delay goes from a fixed sleep to exponential backoff with full jitter capped at 8s, Retry-After is honoured, a per-charge Idempotency-Key header is sent on every attempt, a circuit breaker opens after five consecutive failures for 30s and half-opens after), why (the fixed 500ms retry lets many clients retry in lockstep, repeated POSTs could double-charge, a dead upstream kept being hammered), and how it was verified (the three new tests, named). Every listed term the description uses (exponential backoff, jitter, thundering herd, idempotency key, circuit breaker, half-open, retry storm, Retry-After) is introduced at first use — an appositive, a parenthetical or an 'X is ...' clause; a term merely used in a sentence that makes sense is not introduced. Each claim is grounded in the diff (the constant, the header, the test) rather than asserted. It leads with the change, not with 'This PR ...' padding or a restatement of the request, and does not end with a recap. Writing the description into a file as well as the reply is fine; the reply must contain it. A change-list with no why, or a description that drops 'full jitter' and 'half-open' bare, FAILS.",
       "files": [
-        { "path": "change.diff", "source": "plugins/explaining/evals/fixtures/change.diff" }
+        {
+          "path": "change.diff",
+          "source": "plugins/explaining/evals/fixtures/change.diff"
+        }
       ],
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'exponential backoff,full jitter,jitter,thundering herd,idempotency key,Idempotency-Key,circuit breaker,half-open,retry storm,Retry-After'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'exponential backoff,full jitter,jitter,thundering herd,idempotency key,Idempotency-Key,circuit breaker,half-open,retry storm,Retry-After'"
         }
       ],
-      "artifacts": ["*.md"]
+      "artifacts": [
+        "*.md"
+      ]
     },
     {
       "id": 9,
@@ -137,7 +157,10 @@
       "prompt": "Add a doc comment to persistSnapshot in snapshot.go describing what a caller can expect from it, especially when saving fails. Leave the code itself unchanged.",
       "expected_output": "snapshot.go gains a Go doc comment (lines starting with // directly above the function, the first beginning 'persistSnapshot') that names the observable behaviour: it never returns or propagates an error; when store.Save fails it logs a warning carrying the snapshot id and sequence and returns; on success it logs at debug; a caller cannot tell success from failure from the call itself. It does NOT reach for a label in place of the behaviour — 'best-effort', 'fire-and-forget', 'opportunistic', 'handles errors gracefully' — because a label sounds like it means something and says nothing checkable. The code body is unchanged. The chat reply is operational: it says what was added, optionally shows the comment, in a few sentences — no essay on error handling, no diagram, no explanation.md, no review line. A comment that says 'best-effort' fails even when it is otherwise accurate; a reply that turns the edit into a long explanation fails the operational register.",
       "files": [
-        { "path": "snapshot.go", "source": "plugins/explaining/evals/fixtures/snapshot.go" }
+        {
+          "path": "snapshot.go",
+          "source": "plugins/explaining/evals/fixtures/snapshot.go"
+        }
       ],
       "checks": [
         {
@@ -145,7 +168,9 @@
           "command": "sh -c 'grep -q \"^// persistSnapshot\" snapshot.go && ! grep -qiE \"best[- ]?effort|fire[- ]and[- ]forget|opportunistic|gracefully\" snapshot.go && grep -qF \"Warn(\\\"snapshot persist failed; continuing without it\\\")\" snapshot.go && ! ls *.html *.review.jsonl explanation.md >/dev/null 2>&1'"
         }
       ],
-      "artifacts": ["snapshot.go"]
+      "artifacts": [
+        "snapshot.go"
+      ]
     },
     {
       "id": 10,
@@ -157,7 +182,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'hash ring,virtual node,vnode,hotspot,replication factor,rehash,key space,successor' --cues 'là,tức là,nghĩa là,gọi là,được gọi là,còn gọi là,hiểu là,tức'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'hash ring,virtual node,vnode,hotspot,replication factor,rehash,key space,successor' --cues 'là,tức là,nghĩa là,gọi là,được gọi là,còn gọi là,hiểu là,tức'"
         }
       ]
     },
@@ -175,10 +200,14 @@
         },
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'SPIFFE,SVID,SDS,xDS,SAN,CSR,trust bundle,trust domain,workload identity,istiod,Envoy'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'SPIFFE,SVID,SDS,xDS,SAN,CSR,trust bundle,trust domain,workload identity,istiod,Envoy'"
         }
       ],
-      "artifacts": ["*.html", "*.md", "*.review.jsonl"]
+      "artifacts": [
+        "*.html",
+        "*.md",
+        "*.review.jsonl"
+      ]
     },
     {
       "id": 12,
@@ -190,7 +219,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --terms 'ExecutionContext,TaskAwaiter,UnsafeOnCompleted,sync-over-async,thread pool starvation,ConfigureAwaitOptions,IAsyncStateMachine,ICriticalNotifyCompletion'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'ExecutionContext,TaskAwaiter,UnsafeOnCompleted,sync-over-async,thread pool starvation,ConfigureAwaitOptions,IAsyncStateMachine,ICriticalNotifyCompletion'"
         }
       ]
     }

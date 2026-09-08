@@ -168,15 +168,19 @@ python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json -
 - **`check-term-discipline.ts`** — reads one reply (the harness hands it `{reply}`) and a list
   of terms, and decides per term: `UNUSED` (fine — avoiding jargon is term discipline too),
   `DEFINED` (the sentence of first use carries a definitional cue attached to the term: a
-  colon, a dash or parenthesis within a word, an appositive comma, a copula within three words,
-  "called"/"known as" before it, or the `expansion (ACRONYM)` shape), or `UNDEFINED`. Fenced
-  code is not prose; a heading or bold lead-in is read with the sentence after it; an
-  all-caps term matches case-sensitively so `HOT` never hits "hot pages"; `--cues` adds
-  another language's cue words (`là`, `tức là`, `gọi là`). Exit `0` when no term is undefined
-  (or at most `--max-undefined`), `1` otherwise, `2` when it could not run. Its oracle is the
-  comment at the top of the file: under-flagging is by design (it is a floor; the grader is
-  the ceiling), over-flagging is a bug. Its tests carry the real baseline reply the grader
-  passed, which the check refuses, and a disciplined rewrite, which it accepts.
+  colon, a does-verb saying what it does ("`VACUUM FULL` rewrites the table"), a dash,
+  parenthesis or appositive comma within two words, a copula within three, "called" / "known
+  as" / a predicative copula before it ("a modified page is *dirty*"), or the term opening a
+  parenthesis after a word — `write-ahead log (WAL)`, `(`setting`, default 3)`), or
+  `UNDEFINED`. Fenced code is not prose; a heading or bold lead-in is read with the sentence
+  after it; an all-caps term matches case-sensitively so `HOT` never hits "hot pages"; `--cues`
+  adds another language's cue words (`là`, `tức là`, `gọi là`). It is a **floor**: it refuses
+  a reply whose bare terms exceed `max(--max-undefined, floor(--max-undefined-ratio × used))`
+  — the fixture uses `1` and `0.34`, so a mass bare drop (a baseline reply leaves 60–100 % of
+  the terms it uses bare) fails and a single miss on a long reply goes to the grader. Exit
+  `0` / `1` / `2` as the others. Its oracle is the comment at the top of the file:
+  under-flagging is by design, over-flagging is a bug. Its tests carry the real baseline reply
+  the grader passed (refused) and a disciplined rewrite (accepted).
 - **`check-review-log.ts`** — reads the `*.review.jsonl` log Rule 5 leaves next to a draft and
   decides whether the review really happened: rounds present and consecutive, never more than
   three, terminated by a `PASS` or by the cap, every rendered brief reproducing the shipped

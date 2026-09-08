@@ -783,6 +783,13 @@ class ToddWayStyle(unittest.TestCase):
         self.assertIn("The first sentence is not exempt", self.body)
         self.assertIn("Every channel the reader sees", self.body)
 
+    def test_a_requested_text_is_delivered_in_the_reply_not_pointed_at(self):
+        """Measured 2026-09-08 on the PR-description case: with the style on, the
+        description went to PR_DESCRIPTION.md and the reply said "text above, ready
+        to paste". B5's draft-to-disk step is for the reader; the reply still
+        carries the text the user asked for."""
+        self.assertIn("not a substitute for the reply", self.body)
+
     def test_inlined_blind_reader_brief_is_identical_to_the_shipped_template(self):
         """The style inlines the brief as its no-plugin fallback, and
         check-review-log.ts asserts a rendered brief reproduces the shipped

@@ -7,18 +7,20 @@
 //   INTRODUCED. A first use is introduced when the sentence it sits in carries a
 //   definitional cue attached to the term:
 //     - directly after the term: a colon ("WAL: the append-only file...");
-//     - within one word after: a dash, an opening parenthesis, "=", or an appositive comma
+//     - within one word after: "="; within two words after: a dash, an appositive comma
+//       or an opening parenthesis ("a separate B-tree on disk (a sorted tree of pages)");
 //       (", which", ", the", ", a", ", i.e.", ", meaning", ", where", ", also known
 //       as", ", short for" ...);
 //     - within AFTER_WINDOW words after: a copula ("is", "are", "means", "refers to",
 //       "stands for", "denotes", "describes");
-//     - directly after: a knob verb that says what a setting does ("caps",
-//       "controls", "limits", "bounds", "governs", "sets", "specifies", "determines",
-//       "tells") — "MaxDeliver caps redelivery" introduces MaxDeliver;
+//     - directly after: a does-verb that says what a setting, tool or mechanism does
+//       ("caps", "controls", "rewrites", "lets", "logs", ...) — "MaxDeliver caps
+//       redelivery", "VACUUM FULL rewrites the table" introduce the term;
 //     - within BEFORE_WINDOW words before: "called", "known as", "termed", "dubbed",
-//       "so-called", "named";
-//     - the term sits alone inside parentheses right after at least one word — the
-//       acronym-expansion shape, "write-ahead log (WAL)";
+//       "so-called", "named", "referred to as", "marked as", or a predicative copula
+//       ("A modified page is *dirty* until ...");
+//     - the term opens a parenthesis right after at least one word — the acronym-expansion
+//       shape "write-ahead log (WAL)", or "holds a few back (`setting`, default 3)";
 //     - any extra cue the caller passes with --cues (another language: "là",
 //       "tức là", "gọi là" ...), on either side, with the copula window.
 //   A term the reply never uses is UNUSED and needs no introduction: avoiding jargon
@@ -52,26 +54,39 @@ interface AfterCue {
   gap: number;
 }
 
+/** Verbs that introduce a setting, tool or mechanism by saying what it does. Both the
+ * base and the third-person form count ("full-page writes log ...", "MaxDeliver caps ..."). */
+const DOES_VERBS = ['cap', 'control', 'limit', 'bound', 'govern', 'set', 'specify', 'determine',
+  'tell', 'rewrite', 'write', 'log', 'record', 'let', 'allow', 'run', 'keep', 'hold', 'reclaim',
+  'track', 'store', 'mark', 'remove', 'defer', 'pin', 'reserve', 'multiplex', 'share', 'issue',
+  'sign', 'rotate', 'push', 'deliver', 'replace', 'suspend', 'gate', 'throttle', 'decide',
+  'pick', 'choose', 'reclaim', 'flush', 'evict', 'compact', 'reject', 'refuse', 'accept'];
+
+function thirdPerson(verb: string): string {
+  if (/(s|x|z|ch|sh)$/.test(verb)) return `${verb}es`;
+  if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
+  return `${verb}s`;
+}
+
 // Word cues carry a leading space so "this" never matches " is ".
 const AFTER_CUES: AfterCue[] = [
   { cue: ':', gap: 0 },
-  { cue: '—', gap: 1 }, { cue: '–', gap: 1 }, { cue: ' - ', gap: 1 }, { cue: '(', gap: 1 }, { cue: '=', gap: 1 },
-  { cue: ', which', gap: 1 }, { cue: ', that is', gap: 1 }, { cue: ', i.e', gap: 1 },
-  { cue: ', ie ', gap: 1 }, { cue: ', meaning', gap: 1 }, { cue: ', where', gap: 1 },
-  { cue: ', a ', gap: 1 }, { cue: ', an ', gap: 1 }, { cue: ', the ', gap: 1 },
-  { cue: ', also known as', gap: 1 }, { cue: ', also called', gap: 1 }, { cue: ', aka', gap: 1 },
-  { cue: ', short for', gap: 1 }, { cue: ', or ', gap: 1 },
+  { cue: '—', gap: 2 }, { cue: '–', gap: 2 }, { cue: ' - ', gap: 2 }, { cue: '(', gap: 2 }, { cue: '=', gap: 1 },
+  { cue: ', which', gap: 2 }, { cue: ', that is', gap: 2 }, { cue: ', i.e', gap: 2 },
+  { cue: ', ie ', gap: 2 }, { cue: ', meaning', gap: 2 }, { cue: ', where', gap: 2 },
+  { cue: ', a ', gap: 2 }, { cue: ', an ', gap: 2 }, { cue: ', the ', gap: 2 },
+  { cue: ', also known as', gap: 2 }, { cue: ', also called', gap: 2 }, { cue: ', aka', gap: 2 },
+  { cue: ', short for', gap: 2 }, { cue: ', or ', gap: 2 },
   // A knob or setting is introduced by saying what it does: "MaxDeliver caps redelivery".
-  { cue: ' caps ', gap: 0 }, { cue: ' controls ', gap: 0 }, { cue: ' limits ', gap: 0 },
-  { cue: ' bounds ', gap: 0 }, { cue: ' governs ', gap: 0 }, { cue: ' sets ', gap: 0 },
-  { cue: ' specifies ', gap: 0 }, { cue: ' determines ', gap: 0 }, { cue: ' tells ', gap: 0 },
+  ...DOES_VERBS.flatMap((verb) => [verb, thirdPerson(verb)]).map((verb) => ({ cue: ` ${verb} `, gap: 0 })),
   { cue: ' is ', gap: AFTER_WINDOW }, { cue: ' are ', gap: AFTER_WINDOW },
   { cue: ' means ', gap: AFTER_WINDOW }, { cue: ' refers to', gap: AFTER_WINDOW },
   { cue: ' stands for', gap: AFTER_WINDOW }, { cue: ' denotes ', gap: AFTER_WINDOW },
   { cue: ' describes ', gap: AFTER_WINDOW },
 ];
 
-const BEFORE_CUES = ['called', 'known as', 'termed', 'dubbed', 'so-called', 'named'];
+const BEFORE_CUES = ['called', 'known as', 'termed', 'dubbed', 'so-called', 'named',
+  'referred to as', 'marked as', 'is', 'are', 'becomes', 'become'];
 
 export type Status = 'DEFINED' | 'UNDEFINED' | 'UNUSED';
 
@@ -199,7 +214,7 @@ export function hasBeforeCue(before: string, extraCues: string[] = []): boolean 
 /** Pure: the acronym-expansion shape — `expansion (TERM)` with a word before the paren. */
 export function isParentheticalExpansion(before: string, after: string): boolean {
   const opens = /\(\s*[`"*]*$/.test(before);
-  const closes = /^[`"*]*\s*\)/.test(after);
+  const closes = /^[`"*]*\s*[),]/.test(after); // "(WAL)" or "(`setting`, default 3)"
   const preceded = wordsOf(before.replace(/\(\s*[`"*]*$/, '')).length >= 1;
   return opens && closes && preceded;
 }
@@ -231,13 +246,13 @@ function excerpt(sentence: string, limit: number): string {
 }
 
 /** Pure: one line per term, then the summary line the harness's evidence tail shows. */
-export function formatReport(evaluation: Evaluation, maxUndefined: number, limit = 160): string {
+export function formatReport(evaluation: Evaluation, allowed: number, limit = 160): string {
   const lines = evaluation.verdicts.map((v) => v.status === 'UNUSED'
     ? `UNUSED    ${JSON.stringify(v.term)}`
     : `${v.status.padEnd(9)} ${JSON.stringify(v.term)} — ${excerpt(v.sentence, limit)}`);
-  const verdict = evaluation.undefined > maxUndefined ? 'INVALID' : 'VALID';
+  const verdict = evaluation.undefined > allowed ? 'INVALID' : 'VALID';
   lines.push(`${verdict}: ${evaluation.undefined} undefined of ${evaluation.used} used `
-    + `(${evaluation.verdicts.length} listed, max-undefined ${maxUndefined})`);
+    + `(${evaluation.verdicts.length} listed, ${allowed} allowed)`);
   return lines.join('\n');
 }
 
@@ -246,7 +261,16 @@ export interface CliArgs {
   terms: string[];
   cues: string[];
   maxUndefined: number;
+  maxUndefinedRatio: number;
   error: string | null;
+}
+
+/** Pure: how many bare terms the floor tolerates for this reply — the larger of the
+ * absolute allowance and the share of USED terms. The floor exists to refuse a mass
+ * bare drop (a baseline reply leaves 60–100% of its terms bare); a one-off miss on a
+ * long reply is the grader's call, not the script's. */
+export function allowedUndefined(used: number, maxUndefined: number, maxUndefinedRatio: number): number {
+  return Math.max(maxUndefined, Math.floor(used * maxUndefinedRatio));
 }
 
 function splitList(raw: string): string[] {
@@ -255,7 +279,7 @@ function splitList(raw: string): string[] {
 
 /** Pure: argv → args, or a named error. */
 export function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { reply: null, terms: [], cues: [], maxUndefined: 0, error: null };
+  const args: CliArgs = { reply: null, terms: [], cues: [], maxUndefined: 0, maxUndefinedRatio: 0, error: null };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -269,6 +293,14 @@ export function parseArgs(argv: string[]): CliArgs {
         return args;
       }
       args.maxUndefined = n; i++; continue;
+    }
+    if (flag === '--max-undefined-ratio' && value !== undefined) {
+      const r = Number(value);
+      if (!Number.isFinite(r) || r < 0 || r > 1) {
+        args.error = `--max-undefined-ratio must be a number in [0, 1], got ${JSON.stringify(value)}`;
+        return args;
+      }
+      args.maxUndefinedRatio = r; i++; continue;
     }
     args.error = `unknown or incomplete argument ${JSON.stringify(flag)}`;
     return args;
@@ -297,8 +329,9 @@ export async function main(argv: string[]): Promise<number> {
     return EXIT_CODE.FAIL;
   }
   const evaluation = evaluateReply(reply, args.terms, args.cues);
-  console.log(formatReport(evaluation, args.maxUndefined));
-  return evaluation.undefined > args.maxUndefined ? EXIT_CODE.FAIL : EXIT_CODE.PASS;
+  const allowed = allowedUndefined(evaluation.used, args.maxUndefined, args.maxUndefinedRatio);
+  console.log(formatReport(evaluation, allowed));
+  return evaluation.undefined > allowed ? EXIT_CODE.FAIL : EXIT_CODE.PASS;
 }
 
 if (import.meta.main) {
