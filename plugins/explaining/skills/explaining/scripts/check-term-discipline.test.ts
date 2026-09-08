@@ -235,6 +235,11 @@ describe('isParentheticalExpansion', () => {
     expect(isParentheticalExpansion('the log — ', ' grows without bound')).toBe(false);
   });
 
+  test('a dash right before the term names what the sentence just described', () => {
+    expect(hasBeforeCue('every instance retried in the same 500 ms beats — a ')).toBe(true);
+    expect(hasBeforeCue('every instance retried in the same beats and a ')).toBe(false);
+  });
+
   test('a cap named by "at most" or "up to" before the term', () => {
     expect(hasBeforeCue('The server allows at most `')).toBe(true);
     expect(hasBeforeCue('pools of up to ')).toBe(true);

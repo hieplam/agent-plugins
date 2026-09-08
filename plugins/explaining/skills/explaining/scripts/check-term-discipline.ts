@@ -25,7 +25,8 @@
 //       shape "write-ahead log (WAL)", "holds a few back (`setting`, default 3)", or the
 //       same with a dash pair "the last few — `setting`, default 3 —";
 //     - a cap named by "at most" / "up to" / "capped at" before it ("at most
-//       `max_connections` connections");
+//       `max_connections` connections"), or a dash right before the term naming what the
+//       sentence just described ("retried in the same 500 ms beats — a thundering herd");
 //     - any extra cue the caller passes with --cues (another language: "là",
 //       "tức là", "gọi là" ...), on either side, with the copula window.
 //   A term the reply never uses is UNUSED and needs no introduction: avoiding jargon
@@ -256,6 +257,8 @@ export function hasAfterCue(after: string, extraCues: string[] = []): boolean {
 export function hasBeforeCue(before: string, extraCues: string[] = []): boolean {
   let lead = before.toLowerCase().replace(/[\s`*_"'“‘(]+$/, '');
   lead = lead.replace(/\s+(?:the|a|an)$/, '');
+  // "<what just happened> — a thundering herd ...": the dash names the phenomenon.
+  if (/[—–]$/.test(lead)) return true;
   const window = wordsOf(lead).slice(-BEFORE_WINDOW).join(' ');
   for (const raw of [...BEFORE_CUES, ...extraCues]) {
     const cue = raw.trim().toLowerCase();

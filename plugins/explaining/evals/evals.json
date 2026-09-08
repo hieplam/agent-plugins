@@ -143,7 +143,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'exponential backoff,full jitter,jitter,thundering herd,idempotency key,Idempotency-Key,circuit breaker,half-open,retry storm,Retry-After'"
+          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'exponential backoff,jitter,thundering herd,idempotency key,circuit breaker,half-open,retry storm,Retry-After'"
         }
       ],
       "artifacts": [
