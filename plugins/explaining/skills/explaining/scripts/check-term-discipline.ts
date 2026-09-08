@@ -16,14 +16,14 @@
 //     - within one word after: a does-verb that says what a setting, tool or mechanism
 //       does ("caps", "controls", "rewrites", "lets", "logs", ...) — "MaxDeliver caps
 //       redelivery", "`workqueue` retention deletes a message" introduce the term;
-//     - within one word after: a table cell border "|" — a settings table whose columns
+//     - within three words after: a table cell border "|" — a settings table whose columns
 //       say what each setting does is a definition list;
 //     - within BEFORE_WINDOW words before: "called", "known as", "termed", "dubbed",
 //       "so-called", "named", "referred to as", "marked as", or a predicative copula
 //       ("A modified page is *dirty* until ...");
 //     - the term opens a parenthesis right after at least one word — the acronym-expansion
-//       shape "write-ahead log (WAL)", "holds a few back (`setting`, default 3)", or the
-//       same with a dash pair "the last few — `setting`, default 3 —";
+//       shape "write-ahead log (WAL)", "holds a few back (`setting`, default 3)", "a pooler
+//       (PgBouncer in transaction mode)", or a dash pair "the last few — `setting`, default 3 —";
 //     - a cap named by "at most" / "up to" / "capped at" before it ("at most
 //       `max_connections` connections"), or a dash right before the term naming what the
 //       sentence just described ("retried in the same 500 ms beats — a thundering herd");
@@ -88,7 +88,7 @@ const AFTER_CUES: AfterCue[] = [
   // A knob or setting is introduced by saying what it does: "MaxDeliver caps redelivery".
   ...DOES_VERBS.flatMap((verb) => [verb, thirdPerson(verb)]).map((verb) => ({ cue: ` ${verb} `, gap: 1 })),
   // A definition table: "| `AckWait` | 30s | How long the server waits ... |".
-  { cue: ' | ', gap: 1 },
+  { cue: ' | ', gap: 3 },
   { cue: ' is ', gap: AFTER_WINDOW }, { cue: ' are ', gap: AFTER_WINDOW },
   { cue: ' means ', gap: AFTER_WINDOW }, { cue: ' refers to', gap: AFTER_WINDOW },
   { cue: ' stands for', gap: AFTER_WINDOW }, { cue: ' denotes ', gap: AFTER_WINDOW },
@@ -270,12 +270,13 @@ export function hasBeforeCue(before: string, extraCues: string[] = []): boolean 
 /** Pure: the naming shape — `expansion (TERM)`, `(TERM, default 3)`, or the same with a
  * dash pair, `the last few — TERM, default 3 —` — with at least one word before it. */
 export function isParentheticalExpansion(before: string, after: string): boolean {
+  // The term opens a parenthesis after a word: "(WAL)", "(`setting`, default 3)", or
+  // "a pooler (PgBouncer in transaction mode)" — the parenthesis names the noun before it.
   const opensParen = /\(\s*[`"*]*$/.test(before);
-  const closesParen = /^[`"*]*\s*[),]/.test(after); // "(WAL)" or "(`setting`, default 3)"
   const opensDash = /[—–]\s*[`"*]*$/.test(before);
   const closesDash = /^[`"*]*\s*(?:,|[—–])/.test(after); // "— `setting`, default 3 —"
   const preceded = wordsOf(before.replace(/[(—–]\s*[`"*]*$/, '')).length >= 1;
-  return preceded && ((opensParen && closesParen) || (opensDash && closesDash));
+  return preceded && (opensParen || (opensDash && closesDash));
 }
 
 /** Pure: classify one term against the reply's sentences. */

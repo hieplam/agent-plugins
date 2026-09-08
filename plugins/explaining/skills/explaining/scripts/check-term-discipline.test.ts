@@ -172,6 +172,7 @@ describe('hasAfterCue', () => {
 
   test('a settings table row introduces the setting in its cells', () => {
     expect(hasAfterCue('` | 30s | How long the server waits for an ack |')).toBe(true);
+    expect(hasAfterCue('` / `-NAK {"delay":30000000000}` | Redeliver now')).toBe(true);
     expect(hasAfterCue(' timer and delivery count')).toBe(false);
   });
 
@@ -243,6 +244,10 @@ describe('isParentheticalExpansion', () => {
   test('a cap named by "at most" or "up to" before the term', () => {
     expect(hasBeforeCue('The server allows at most `')).toBe(true);
     expect(hasBeforeCue('pools of up to ')).toBe(true);
+  });
+
+  test('the term opening a parenthesis that continues names the noun before it', () => {
+    expect(isParentheticalExpansion('put a pooler in front (', ' in transaction mode)')).toBe(true);
   });
 
   test('a parenthesis with nothing before it, or the term not opening it, is not an expansion', () => {

@@ -139,6 +139,49 @@ disk for checks (`{reply}`), `check-term-discipline.ts` gates every explanatory 
 grader, and B2 gained two paragraphs — the first sentence is not exempt, and every channel the
 reader sees (the reply, not only the file) carries the lead-ins.
 
+### Measured, 2026-09-08/09, second run (all 12 cases, clean arm)
+
+Both arms once; styled legs whose verdict changed with a checker or style fix were re-run
+(cases 2, 3, 5, 6, 7, 8, 11, 12), and four styled transcripts whose machine check had failed
+under an earlier checker but passes the final one were graded from their saved transcript
+with the harness's own grader rather than re-executed (2, 7, 10, 12). Verdict = machine
+checks, then the LLM grader. "Bare" = listed terms used without a lead-in, as the final
+`check-term-discipline.ts` counts them, out of listed terms used.
+
+| # | Case | Baseline | Bare | `Todd way` | Bare |
+| --- | --- | --- | --- | --- | --- |
+| 1 | operational stays terse | PASS | — | PASS | — |
+| 2 | JetStream acks | FAIL (term floor) | 5/12 | PASS | 3/11 |
+| 3 | the seam (index on a hot table) | FAIL (term floor) | 10/11 | PASS | 2/8 |
+| 4 | multi-actor flow illustrated | FAIL (no diagram) | — | PASS | — |
+| 5 | WAL, blind-reader review | FAIL (no review log) | 4/7 | PASS | 2/6 |
+| 6 | first sentence, Postgres bloat | FAIL (term floor) | 7/10 | PASS | 3/12 |
+| 7 | error message, explanatory in disguise | FAIL (term floor) | 3/4 | PASS | 1/5 |
+| 8 | PR description | FAIL (term floor) | 3/6 | **FAIL** (term floor) | 4/7 |
+| 9 | doc comment, no "best-effort" | FAIL ("on a best-effort basis") | — | PASS | — |
+| 10 | Vietnamese, borrowed terms | PASS | 1/1 | PASS | 1/1 |
+| 11 | mTLS acronyms | FAIL (no diagram; 5/10 bare) | 5/10 | PASS | 2/7 |
+| 12 | senior audience | FAIL (term floor) | 2/2 | PASS | 1/1 |
+
+Nine of twelve cases now separate the arms; cases 1 and 10 are guards the baseline already
+meets, and case 8 is a styled failure. The suite went from "both arms pass" to a
+discriminating one, and the numbers say what the style does on jargon: a baseline reply leaves
+roughly two thirds of the listed terms it uses bare, a styled one roughly one fifth, and the
+styled first sentence is plain words in every case where it was measured.
+
+**What still fails, honestly.** Case 8 (a PR description) opens in plain words, then its
+second sentence lists "idempotency key, exponential backoff, circuit breaker, Retry-After" by
+name before the sections below define each one — a genuine first-use miss, and the natural
+shape of a PR summary. Two second runs disagreed with the first: case 7's re-run dropped
+"idle in transaction" and "backend process" bare (2 of 5, floor allows 1), and the first run
+of case 6 left "dead tuple, bloat, pg_repack" bare (3 of 8, allows 2). Everything here is
+n=1 or n=2; treat the table as directional, and re-run with `--runs 3` before trusting a
+change to B2 or to the floor.
+
+**Cost.** A styled explanatory leg takes 4–9 minutes and roughly half a million tokens, the
+baseline 15–40 seconds, because B1 renders a diagram and B5 runs one to three blind-reader
+rounds; the same trade the first run measured on case 3.
+
 Run it yourself before changing that clause; a first run needs a raised timeout, since the
 harness default of 420s is shorter than a two-round review:
 
