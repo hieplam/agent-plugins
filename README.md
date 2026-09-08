@@ -39,7 +39,7 @@ cd agent-plugins
 ```
 
 Behaviour: `agents/*.md` link into `~/.claude/agents/`, `skills/<name>/` into
-`~/.claude/skills/`. It is idempotent (an existing link to this repo is skipped), a conflicting
+`~/.claude/skills/`, and `output-styles/*.md` into `~/.claude/output-styles/`. It is idempotent (an existing link to this repo is skipped), a conflicting
 file is backed up to `<name>.bak.<epoch>` first, and a plugin's own `install.sh` runs as a
 post-install hook. `CLAUDE_DIR` overrides the target root (used by the tests).
 
@@ -56,7 +56,7 @@ them.
 | `refactor-for-testability` | skills | Reshape untestable code before changing its behaviour. |
 | `workflow-journal` | skills | Render each Workflow run to a readable Markdown record. |
 | `simple-image-video` | skills | Animate a still image into a short video. |
-| `explaining` | skills | Two eval-proven writing rules (term discipline + grounding) for explanatory prose; refuted rule candidates excluded by A/B data. |
+| `explaining` | skills, output style | Two eval-proven writing rules (term discipline + grounding) for explanatory prose; refuted rule candidates excluded by A/B data. Ships the **Todd way** output style, which folds those rules plus the built-in Concise rules into one always-on style. |
 
 ## Development
 
@@ -72,5 +72,30 @@ python3 scripts/evals/run_evals.py --evals plugins/splitting-plans/skills/splitt
 ```
 
 Every plugin in `plugins/` must be registered in `.claude-plugin/marketplace.json`, and must
-follow the directory contract `install.sh` understands: `agents/`, `skills/`, `claude-md/`,
-`hooks/`, `.claude-plugin/`, `scripts/`, and `evals/` — it warns on anything else.
+follow the directory contract `install.sh` understands: `agents/`, `skills/`, `output-styles/`,
+`claude-md/`, `hooks/`, `.claude-plugin/`, `scripts/`, and `evals/` — it warns on anything else.
+
+## Output styles
+
+An [output style](https://code.claude.com/docs/en/output-styles) is a Markdown file whose body
+is appended to Claude Code's system prompt for **every turn** of the main conversation, so it
+changes the default shape of every response rather than waiting to be invoked. A plugin ships
+them in `output-styles/`; `install.sh` links each `*.md` into `~/.claude/output-styles/`, and
+the file name is the style name unless the frontmatter sets `name:`.
+
+| Style | From | What it does |
+| --- | --- | --- |
+| `Todd way` | `explaining` | Concise on operational replies; on explanatory ones, terms get defined, claims get grounded, multi-actor flows get drawn as validated HTML, and a long draft goes past a blind reader before delivery. |
+
+Select one with `/config` → **Output style**, or set `"outputStyle": "Todd way"` in a settings
+file. It takes effect after `/clear` or in the next session — the system prompt is read once at
+session start. Exactly one style is active at a time, so selecting `Todd way` replaces whatever
+was selected before; that is why it folds the built-in **Concise** rules in rather than assuming
+you still have them.
+
+Output styles are eval-backed the same way skills are — `kind: "output-style"` in
+`scripts/evals/README.md`:
+
+```bash
+python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json
+```

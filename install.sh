@@ -14,6 +14,7 @@
 # Behavior:
 #   - agents/*.md      -> $CLAUDE_DIR/agents/<file>
 #   - skills/<name>/   -> $CLAUDE_DIR/skills/<name>
+#   - output-styles/*.md -> $CLAUDE_DIR/output-styles/<file>
 #   - install.sh       -> executed as a post-install hook (CLAUDE_DIR is passed through);
 #                         claude-md/ holds snippets consumed by such hooks;
 #                         rules/ holds machine-global rule files such hooks link
@@ -45,6 +46,7 @@ list_plugins() {
     local parts=()
     [ -d "$p/agents" ] && parts+=("agents: $(find "$p/agents" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
     [ -d "$p/skills" ] && parts+=("skills: $(find "$p/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')")
+    [ -d "$p/output-styles" ] && parts+=("output-styles: $(find "$p/output-styles" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
     say "  - $name (${parts[*]:-empty})"
   done
 }
@@ -97,6 +99,17 @@ install_plugin() {
     done
   fi
 
+  # Output styles are single .md files, linked by file name (the file name IS the
+  # style name unless the frontmatter sets `name:`), the same shape as agents/.
+  if [ -d "$dir/output-styles" ]; then
+    found_any=1
+    mkdir -p "$CLAUDE_DIR/output-styles"
+    for f in "$dir/output-styles"/*.md; do
+      [ -e "$f" ] || continue
+      link_one "$f" "$CLAUDE_DIR/output-styles/$(basename "$f")" "style  $(basename "$f")"
+    done
+  fi
+
   # Post-install hook: a plugin-level install.sh (e.g. appends claude-md/ snippets).
   if [ -f "$dir/install.sh" ]; then
     found_any=1
@@ -115,7 +128,7 @@ install_plugin() {
       # definitions; the plugin's own install.sh hook links both into
       # $CLAUDE_DIR/rules/ and $CLAUDE_DIR/canvases/, so the root installer
       # skips both silently.
-      agents|skills|claude-md|hooks|rules|canvases|.claude-plugin) ;;
+      agents|skills|output-styles|claude-md|hooks|rules|canvases|.claude-plugin) ;;
       # scripts/ holds validator scripts invoked from the repo checkout
       # directly (not symlinked); intentionally not installed, skip silently.
       scripts) ;;
@@ -124,7 +137,7 @@ install_plugin() {
     esac
   done
 
-  [ "$found_any" -eq 1 ] || warn "$plugin: no agents/ or skills/ to install"
+  [ "$found_any" -eq 1 ] || warn "$plugin: no agents/, skills/ or output-styles/ to install"
 }
 
 main() {
@@ -133,7 +146,7 @@ main() {
     exit 0
   fi
   if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 0
   fi
 

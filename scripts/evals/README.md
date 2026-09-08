@@ -17,13 +17,14 @@ with/without comparison) instead of inventing a new one.
 ```json
 {
   "skill_name": "example-skill",
-  "kind": "skill",                    // "skill" (default, omit-able) | "agent"
+  "kind": "skill",                    // "skill" (default, omit-able) | "agent" | "output-style"
   "memory_fixture": "memory-fixture/CLAUDE.md", // OPTIONAL, top-level — CLAUDE.md the --arm mem axis writes to scratch/
   "evals": [
     {
       "id": 1,
       "name": "short-slug",
       "agent": "hunter",              // only for kind: "agent" — which agents/<name>.md to test
+      "style": "todd-way",            // only for kind: "output-style" — which output-styles/<name>.md to test
       "prompt": "the task given to the model",
       "expected_output": "prose description of correct behavior — the grading rubric",
       "files": [
@@ -42,6 +43,36 @@ with/without comparison) instead of inventing a new one.
 `<skill-dir>/evals/evals.json`); `kind: "agent"` cases test a plugin's agent
 definitions per case (the evals.json lives at `plugins/<plugin>/evals/evals.json`, each
 case names which `agents/<name>.md` it targets).
+
+`kind: "output-style"` cases test a plugin's output styles. The evals.json lives at
+`plugins/<plugin>/evals/evals.json` like an agent fixture, each case names which
+`output-styles/<name>.md` it targets, and `{skill_dir}` in a check resolves to the
+**plugin root** — so a check can reach sibling tooling as
+`{skill_dir}/skills/<name>/scripts/…` without a second placeholder.
+
+A check has three placeholders: `{skill_dir}` (above), `{scratch}` (the executor's cwd) and
+`{reply}` — the executor's **final reply**, written to `<scratch>/.eval/reply.md` right before
+the checks run. Without it a check can only judge the files the executor chose to leave
+behind, never the text the user actually reads; with it a check can gate term discipline, a
+required closing line, or an opening preamble deterministically before the LLM grader gets a
+say. The dot-directory keeps it invisible to `artifacts` globs and to absence checks such as
+`! ls *.md`. Each placeholder is substituted as one shell-quoted argv token, so use it as a
+direct argument (`--reply {reply}`), not inside a nested `sh -c '…'` string, when the path
+might carry a space.
+
+An output style is *selected*, not made available: the file alone changes nothing. So
+`install_output_style()` writes both halves of the real shape a user's selection
+produces — the style at `.claude/output-styles/<file>.md` **and**
+`{"outputStyle": "<name>"}` in `.claude/settings.json`, which the with_skill leg's
+`--setting-sources project` is what loads. The style name is the file name unless the
+frontmatter sets `name:`, matching Claude Code's own precedence. Verified empirically
+that a project-scope style set this way does reach the system prompt under
+`--setting-sources project --strict-mcp-config`.
+
+The with/without comparison is unusually clean for this kind: a style modifies the
+system prompt on **every** turn, so there is nothing to trigger and no way for the
+executor to decline it, and the `without_skill` leg's `--safe-mode` disables project
+settings entirely. Same model, same prompt, style or no style.
 
 ## What it does
 

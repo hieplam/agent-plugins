@@ -1,0 +1,148 @@
+diff --git a/src/billing/client.ts b/src/billing/client.ts
+index 3f1c2a0..9be7d44 100644
+--- a/src/billing/client.ts
++++ b/src/billing/client.ts
+@@ -1,32 +1,78 @@
+ import { randomUUID } from "node:crypto";
+
+-const RETRY_DELAY_MS = 500;
+-const MAX_ATTEMPTS = 5;
++const BASE_DELAY_MS = 200;
++const MAX_DELAY_MS = 8_000;
++const MAX_ATTEMPTS = 6;
++const BREAKER_FAILURE_THRESHOLD = 5;
++const BREAKER_OPEN_MS = 30_000;
+
+ export interface ChargeRequest {
+   customerId: string;
+   amountCents: number;
+   currency: string;
+ }
+
+ export interface ChargeResult {
+   chargeId: string;
+   status: "succeeded" | "pending";
+ }
+
+-function sleep(ms: number): Promise<void> {
+-  return new Promise((resolve) => setTimeout(resolve, ms));
++type BreakerState = "closed" | "open" | "half-open";
++
++class CircuitBreaker {
++  private state: BreakerState = "closed";
++  private failures = 0;
++  private openedAt = 0;
++
++  constructor(private readonly now: () => number = Date.now) {}
++
++  allows(): boolean {
++    if (this.state === "open" && this.now() - this.openedAt >= BREAKER_OPEN_MS) {
++      this.state = "half-open";
++    }
++    return this.state !== "open";
++  }
++
++  onSuccess(): void {
++    this.failures = 0;
++    this.state = "closed";
++  }
++
++  onFailure(): void {
++    this.failures += 1;
++    if (this.state === "half-open" || this.failures >= BREAKER_FAILURE_THRESHOLD) {
++      this.state = "open";
++      this.openedAt = this.now();
++    }
++  }
++}
++
++function backoffDelay(attempt: number, retryAfterMs: number | null, random: () => number): number {
++  if (retryAfterMs !== null) return retryAfterMs;
++  const cap = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** attempt);
++  return Math.floor(random() * cap);
+ }
+
+ export class BillingClient {
+-  constructor(private readonly baseUrl: string, private readonly fetchImpl = fetch) {}
++  private readonly breaker = new CircuitBreaker();
++
++  constructor(
++    private readonly baseUrl: string,
++    private readonly fetchImpl = fetch,
++    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
++    private readonly random: () => number = Math.random,
++  ) {}
+
+   async charge(req: ChargeRequest): Promise<ChargeResult> {
++    const idempotencyKey = randomUUID();
+     let lastError: unknown;
+     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
++      if (!this.breaker.allows()) {
++        throw new Error("billing: circuit open, request rejected without calling upstream");
++      }
+       const res = await this.fetchImpl(`${this.baseUrl}/v1/charges`, {
+         method: "POST",
+-        headers: { "content-type": "application/json" },
++        headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey },
+         body: JSON.stringify(req),
+       });
+-      if (res.ok) return (await res.json()) as ChargeResult;
++      if (res.ok) {
++        this.breaker.onSuccess();
++        return (await res.json()) as ChargeResult;
++      }
++      this.breaker.onFailure();
+       if (res.status < 500 && res.status !== 429) {
+         throw new Error(`billing: ${res.status} ${await res.text()}`);
+       }
+       lastError = new Error(`billing: ${res.status}`);
+-      await sleep(RETRY_DELAY_MS);
++      const header = res.headers.get("Retry-After");
++      const retryAfterMs = header && /^\d+$/.test(header) ? Number(header) * 1000 : null;
++      await this.sleep(backoffDelay(attempt, retryAfterMs, this.random));
+     }
+     throw lastError ?? new Error("billing: exhausted retries");
+   }
+ }
+diff --git a/src/billing/client.test.ts b/src/billing/client.test.ts
+index 11aa0e2..7c0d5f1 100644
+--- a/src/billing/client.test.ts
++++ b/src/billing/client.test.ts
+@@ -1,4 +1,4 @@
+-import { describe, expect, test } from "bun:test";
++import { describe, expect, mock, test } from "bun:test";
+ import { BillingClient } from "./client";
+
+ function response(status: number, body = "{}", headers: Record<string, string> = {}): Response {
+@@ -14,3 +14,41 @@ describe("BillingClient.charge", () => {
+     expect(await client.charge({ customerId: "c1", amountCents: 100, currency: "USD" })).toEqual({ chargeId: "ch_1", status: "succeeded" });
+   });
++
++  test("sends the same Idempotency-Key on every retry of one charge", async () => {
++    const keys: string[] = [];
++    const fetchImpl = mock(async (_url: string, init: RequestInit) => {
++      keys.push((init.headers as Record<string, string>)["Idempotency-Key"]);
++      return keys.length < 3 ? response(503) : response(200, JSON.stringify({ chargeId: "ch_1", status: "succeeded" }));
++    });
++    const client = new BillingClient("http://x", fetchImpl as unknown as typeof fetch, async () => {}, () => 0);
++    await client.charge({ customerId: "c1", amountCents: 100, currency: "USD" });
++    expect(new Set(keys).size).toBe(1);
++  });
++
++  test("honours Retry-After over the computed delay", async () => {
++    const delays: number[] = [];
++    let calls = 0;
++    const fetchImpl = mock(async () => (calls++ === 0 ? response(429, "{}", { "Retry-After": "2" }) : response(200, JSON.stringify({ chargeId: "ch_1", status: "succeeded" }))));
++    const client = new BillingClient("http://x", fetchImpl as unknown as typeof fetch, async (ms) => { delays.push(ms); }, () => 0.5);
++    await client.charge({ customerId: "c1", amountCents: 100, currency: "USD" });
++    expect(delays).toEqual([2000]);
++  });
++
++  test("opens the breaker after five failures and rejects without calling upstream", async () => {
++    let calls = 0;
++    const fetchImpl = mock(async () => { calls++; return response(503); });
++    const client = new BillingClient("http://x", fetchImpl as unknown as typeof fetch, async () => {}, () => 0);
++    await expect(client.charge({ customerId: "c1", amountCents: 100, currency: "USD" })).rejects.toThrow("circuit open");
++    expect(calls).toBe(5);
++  });
+ });
