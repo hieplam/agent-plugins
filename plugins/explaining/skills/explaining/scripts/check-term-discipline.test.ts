@@ -165,8 +165,14 @@ describe('hasAfterCue', () => {
     expect(hasAfterCue('` rewrites the table compactly')).toBe(true);
     expect(hasAfterCue('* log an entire page image')).toBe(true); // base form counts too
     expect(hasAfterCue('` replaces the bool on Task')).toBe(true);
-    expect(hasAfterCue(' pressure caps nothing')).toBe(false);
+    expect(hasAfterCue(' retention deletes a message once acked')).toBe(true);
+    expect(hasAfterCue(' pressure grows and caps nothing')).toBe(false);
     expect(hasAfterCue(' uses an index only when it helps')).toBe(false);
+  });
+
+  test('a settings table row introduces the setting in its cells', () => {
+    expect(hasAfterCue('` | 30s | How long the server waits for an ack |')).toBe(true);
+    expect(hasAfterCue(' timer and delivery count')).toBe(false);
   });
 
   test('closing decoration of the term itself is skipped before looking', () => {
@@ -222,6 +228,18 @@ describe('isParentheticalExpansion', () => {
     expect(isParentheticalExpansion('holds a few back (`', '`, default 3)')).toBe(true);
   });
 
+  test('a dash pair naming the term counts like a parenthesis', () => {
+    expect(isParentheticalExpansion('holds back the last few — `', '`, default 3 — so an admin')).toBe(true);
+    expect(isParentheticalExpansion('holds back the last few — `', '` — so an admin')).toBe(true);
+    expect(isParentheticalExpansion('— `', '` is late')).toBe(false); // nothing before the dash
+    expect(isParentheticalExpansion('the log — ', ' grows without bound')).toBe(false);
+  });
+
+  test('a cap named by "at most" or "up to" before the term', () => {
+    expect(hasBeforeCue('The server allows at most `')).toBe(true);
+    expect(hasBeforeCue('pools of up to ')).toBe(true);
+  });
+
   test('a parenthesis with nothing before it, or the term not opening it, is not an expansion', () => {
     expect(isParentheticalExpansion('(', ')')).toBe(false);
     expect(isParentheticalExpansion('the log (see the ', ' below)')).toBe(false);
@@ -250,6 +268,17 @@ describe('classifyTerm', () => {
   test('a heading term is judged with the sentence that follows the heading', () => {
     const sentences = splitSentences('## Write amplification\nIt is the extra bytes one write becomes.');
     expect(classifyTerm(sentences, 'write amplification').status).toBe('DEFINED');
+  });
+
+  test('a term first seen in a section title is judged at its first prose use', () => {
+    const reply = '## 2. The HOT cliff: one index can change the cost of every update\n'
+      + 'This is the one that surprises people. Naively every index is re-pointed. '
+      + 'The **HOT** optimization (Heap-Only Tuple) avoids that: the new version fits on the same page.';
+    expect(evaluateReply(reply, ['HOT']).verdicts[0].status).toBe('DEFINED');
+    const bare = '## 2. The HOT cliff\nThis surprises people. Then HOT updates vanish under load.';
+    expect(evaluateReply(bare, ['HOT']).verdicts[0].status).toBe('UNDEFINED');
+    const titleOnly = '## The HOT cliff\nUpdates get expensive.';
+    expect(evaluateReply(titleOnly, ['HOT']).verdicts[0].status).toBe('UNDEFINED');
   });
 });
 

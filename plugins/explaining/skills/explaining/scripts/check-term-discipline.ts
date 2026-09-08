@@ -13,21 +13,27 @@
 //       as", ", short for" ...);
 //     - within AFTER_WINDOW words after: a copula ("is", "are", "means", "refers to",
 //       "stands for", "denotes", "describes");
-//     - directly after: a does-verb that says what a setting, tool or mechanism does
-//       ("caps", "controls", "rewrites", "lets", "logs", ...) — "MaxDeliver caps
-//       redelivery", "VACUUM FULL rewrites the table" introduce the term;
+//     - within one word after: a does-verb that says what a setting, tool or mechanism
+//       does ("caps", "controls", "rewrites", "lets", "logs", ...) — "MaxDeliver caps
+//       redelivery", "`workqueue` retention deletes a message" introduce the term;
+//     - within one word after: a table cell border "|" — a settings table whose columns
+//       say what each setting does is a definition list;
 //     - within BEFORE_WINDOW words before: "called", "known as", "termed", "dubbed",
 //       "so-called", "named", "referred to as", "marked as", or a predicative copula
 //       ("A modified page is *dirty* until ...");
 //     - the term opens a parenthesis right after at least one word — the acronym-expansion
-//       shape "write-ahead log (WAL)", or "holds a few back (`setting`, default 3)";
+//       shape "write-ahead log (WAL)", "holds a few back (`setting`, default 3)", or the
+//       same with a dash pair "the last few — `setting`, default 3 —";
+//     - a cap named by "at most" / "up to" / "capped at" before it ("at most
+//       `max_connections` connections");
 //     - any extra cue the caller passes with --cues (another language: "là",
 //       "tức là", "gọi là" ...), on either side, with the copula window.
 //   A term the reply never uses is UNUSED and needs no introduction: avoiding jargon
 //   is term discipline too. Fenced code blocks are not prose and are not scanned. A
 //   markdown heading or a bold lead-in line is read together with the sentence after
-//   it, because a heading names a section and the definition arrives in the section's
-//   first sentence.
+//   it, and a term whose only appearance there is in the title itself is judged at its
+//   first PROSE use instead: a title names the section, the definition arrives in the
+//   prose ("## The HOT cliff" ... "The HOT optimization (Heap-Only Tuple) avoids that").
 //
 //   Direction of error: UNDER-flagging (a cue that is not really a definition, e.g.
 //   "vacuum is expensive" passing) is BY DESIGN — this check is a floor, the LLM
@@ -60,7 +66,8 @@ const DOES_VERBS = ['cap', 'control', 'limit', 'bound', 'govern', 'set', 'specif
   'tell', 'rewrite', 'write', 'log', 'record', 'let', 'allow', 'run', 'keep', 'hold', 'reclaim',
   'track', 'store', 'mark', 'remove', 'defer', 'pin', 'reserve', 'multiplex', 'share', 'issue',
   'sign', 'rotate', 'push', 'deliver', 'replace', 'suspend', 'gate', 'throttle', 'decide',
-  'pick', 'choose', 'reclaim', 'flush', 'evict', 'compact', 'reject', 'refuse', 'accept'];
+  'pick', 'choose', 'flush', 'evict', 'compact', 'reject', 'refuse', 'accept', 'delete',
+  'wait', 'expire', 'redeliver', 'drop', 'return', 'send', 'stop'];
 
 function thirdPerson(verb: string): string {
   if (/(s|x|z|ch|sh)$/.test(verb)) return `${verb}es`;
@@ -78,7 +85,9 @@ const AFTER_CUES: AfterCue[] = [
   { cue: ', also known as', gap: 2 }, { cue: ', also called', gap: 2 }, { cue: ', aka', gap: 2 },
   { cue: ', short for', gap: 2 }, { cue: ', or ', gap: 2 },
   // A knob or setting is introduced by saying what it does: "MaxDeliver caps redelivery".
-  ...DOES_VERBS.flatMap((verb) => [verb, thirdPerson(verb)]).map((verb) => ({ cue: ` ${verb} `, gap: 0 })),
+  ...DOES_VERBS.flatMap((verb) => [verb, thirdPerson(verb)]).map((verb) => ({ cue: ` ${verb} `, gap: 1 })),
+  // A definition table: "| `AckWait` | 30s | How long the server waits ... |".
+  { cue: ' | ', gap: 1 },
   { cue: ' is ', gap: AFTER_WINDOW }, { cue: ' are ', gap: AFTER_WINDOW },
   { cue: ' means ', gap: AFTER_WINDOW }, { cue: ' refers to', gap: AFTER_WINDOW },
   { cue: ' stands for', gap: AFTER_WINDOW }, { cue: ' denotes ', gap: AFTER_WINDOW },
@@ -86,7 +95,8 @@ const AFTER_CUES: AfterCue[] = [
 ];
 
 const BEFORE_CUES = ['called', 'known as', 'termed', 'dubbed', 'so-called', 'named',
-  'referred to as', 'marked as', 'is', 'are', 'becomes', 'become'];
+  'referred to as', 'marked as', 'is', 'are', 'becomes', 'become',
+  'at most', 'up to', 'a maximum of', 'a limit of', 'capped at', 'limited to'];
 
 export type Status = 'DEFINED' | 'UNDEFINED' | 'UNUSED';
 
@@ -111,15 +121,30 @@ export function stripFences(text: string): string {
 const HEADING = /^(?:#{1,6}\s+.*|\*\*[^*\n]+\*\*:?)\s*$/;
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+/;
 
+export interface Paragraph {
+  text: string;
+  /** Length of the glued heading prefix (including its trailing space); 0 when none. */
+  headingLen: number;
+}
+
+export interface Sentence {
+  text: string;
+  /** Length of the heading prefix inside this sentence; 0 for every sentence but the
+   * first of a heading-led paragraph. A term inside that prefix is a title, not prose. */
+  headingLen: number;
+}
+
 /** Pure: markdown → paragraphs, with a heading or bold lead-in glued onto the
  * paragraph that follows it, and each bullet its own paragraph. */
-export function splitParagraphs(text: string): string[] {
-  const paragraphs: string[] = [];
+export function splitParagraphsWithHeadings(text: string): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
   let current = '';
   let carry = '';
+  let currentHeadingLen = 0;
   const flush = () => {
-    if (current.trim()) paragraphs.push(current.trim());
+    if (current.trim()) paragraphs.push({ text: current.trim(), headingLen: currentHeadingLen });
     current = '';
+    currentHeadingLen = 0;
   };
   for (const raw of text.split('\n')) {
     const line = raw.trim();
@@ -136,24 +161,39 @@ export function splitParagraphs(text: string): string[] {
     } else {
       current = current ? `${current} ${line}` : line;
     }
-    if (carry) { current = `${carry} ${current}`; carry = ''; }
+    if (carry) { current = `${carry} ${current}`; currentHeadingLen = carry.length + 1; carry = ''; }
   }
-  if (carry) current = `${carry} ${current}`;
+  if (carry) { current = `${carry} ${current}`; currentHeadingLen = carry.length + 1; }
   flush();
   return paragraphs;
 }
 
+export function splitParagraphs(text: string): string[] {
+  return splitParagraphsWithHeadings(text).map((p) => p.text);
+}
+
 /** Pure: paragraphs → sentences. A split happens after . ! ? when the next
  * sentence opens with a capital, a quote, a bracket, or markdown emphasis. */
-export function splitSentences(text: string): string[] {
-  const sentences: string[] = [];
-  for (const paragraph of splitParagraphs(text)) {
-    for (const piece of paragraph.split(/(?<=[.!?])\s+(?=[\p{Lu}"'*`(])/u)) {
+export function splitSentencesWithHeadings(text: string): Sentence[] {
+  const sentences: Sentence[] = [];
+  for (const paragraph of splitParagraphsWithHeadings(text)) {
+    let pos = 0; // offset of the next piece inside paragraph.text
+    for (const piece of paragraph.text.split(/(?<=[.!?])\s+(?=[\p{Lu}"'*`(])/u)) {
       const s = piece.trim();
-      if (s.length > 0) sentences.push(s);
+      const start = paragraph.text.indexOf(piece, pos);
+      pos = start + piece.length;
+      if (s.length === 0) continue;
+      // The heading prefix may span several "sentences" ("## 2. The HOT cliff" splits at
+      // "2."), so each piece keeps whatever part of the prefix falls inside it.
+      const headingLen = Math.max(0, Math.min(paragraph.headingLen - start, s.length));
+      sentences.push({ text: s, headingLen });
     }
   }
   return sentences;
+}
+
+export function splitSentences(text: string): string[] {
+  return splitSentencesWithHeadings(text).map((s) => s.text);
 }
 
 function escapeRegExp(s: string): string {
@@ -170,14 +210,27 @@ export function termPattern(term: string): RegExp {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${body}(?:s|es)?(?![\\p{L}\\p{N}_])`, acronym ? 'u' : 'iu');
 }
 
-/** Pure: the first sentence using the term, plus the match offsets in it. */
-export function findTerm(sentences: string[], term: string): { index: number; start: number; end: number } | null {
+function asSentence(s: string | Sentence): Sentence {
+  return typeof s === 'string' ? { text: s, headingLen: 0 } : s;
+}
+
+/** Pure: the first PROSE use of the term, plus the match offsets in its sentence. A use
+ * inside a heading title is skipped (a title names the section; the definition belongs to
+ * the first prose use), and is fallen back on only when the term never appears in prose. */
+export function findTerm(sentences: Array<string | Sentence>, term: string): { index: number; start: number; end: number } | null {
   const pattern = termPattern(term);
+  let headingOnly: { index: number; start: number; end: number } | null = null;
   for (let i = 0; i < sentences.length; i++) {
-    const m = pattern.exec(sentences[i]);
-    if (m && m.index !== undefined) return { index: i, start: m.index, end: m.index + m[0].length };
+    const { text, headingLen } = asSentence(sentences[i]);
+    const re = new RegExp(pattern.source, pattern.flags + 'g');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const hit = { index: i, start: m.index, end: m.index + m[0].length };
+      if (m.index < headingLen) { headingOnly ??= hit; continue; }
+      return hit;
+    }
   }
-  return null;
+  return headingOnly;
 }
 
 function wordsOf(s: string): string[] {
@@ -211,19 +264,22 @@ export function hasBeforeCue(before: string, extraCues: string[] = []): boolean 
   return false;
 }
 
-/** Pure: the acronym-expansion shape — `expansion (TERM)` with a word before the paren. */
+/** Pure: the naming shape — `expansion (TERM)`, `(TERM, default 3)`, or the same with a
+ * dash pair, `the last few — TERM, default 3 —` — with at least one word before it. */
 export function isParentheticalExpansion(before: string, after: string): boolean {
-  const opens = /\(\s*[`"*]*$/.test(before);
-  const closes = /^[`"*]*\s*[),]/.test(after); // "(WAL)" or "(`setting`, default 3)"
-  const preceded = wordsOf(before.replace(/\(\s*[`"*]*$/, '')).length >= 1;
-  return opens && closes && preceded;
+  const opensParen = /\(\s*[`"*]*$/.test(before);
+  const closesParen = /^[`"*]*\s*[),]/.test(after); // "(WAL)" or "(`setting`, default 3)"
+  const opensDash = /[—–]\s*[`"*]*$/.test(before);
+  const closesDash = /^[`"*]*\s*(?:,|[—–])/.test(after); // "— `setting`, default 3 —"
+  const preceded = wordsOf(before.replace(/[(—–]\s*[`"*]*$/, '')).length >= 1;
+  return preceded && ((opensParen && closesParen) || (opensDash && closesDash));
 }
 
 /** Pure: classify one term against the reply's sentences. */
-export function classifyTerm(sentences: string[], term: string, extraCues: string[] = []): TermVerdict {
+export function classifyTerm(sentences: Array<string | Sentence>, term: string, extraCues: string[] = []): TermVerdict {
   const hit = findTerm(sentences, term);
   if (hit === null) return { term, status: 'UNUSED', sentence: '' };
-  const sentence = sentences[hit.index];
+  const sentence = asSentence(sentences[hit.index]).text;
   const before = sentence.slice(0, hit.start);
   const after = sentence.slice(hit.end);
   const defined = hasAfterCue(after, extraCues) || hasBeforeCue(before, extraCues)
@@ -233,7 +289,7 @@ export function classifyTerm(sentences: string[], term: string, extraCues: strin
 
 /** Pure: the whole decision for one reply. */
 export function evaluateReply(reply: string, terms: string[], extraCues: string[] = []): Evaluation {
-  const sentences = splitSentences(stripFences(reply));
+  const sentences = splitSentencesWithHeadings(stripFences(reply));
   const verdicts = terms.map((t) => classifyTerm(sentences, t, extraCues));
   const used = verdicts.filter((v) => v.status !== 'UNUSED').length;
   const undefinedCount = verdicts.filter((v) => v.status === 'UNDEFINED').length;
