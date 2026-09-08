@@ -34,7 +34,124 @@ each rule alone (see `SKILL.md`'s Evidence section for the numbers). Rule 4 is e
 by the two rendering scripts below plus a machine check in this skill's own eval case. Rule
 5 is enforced by `check-review-log.ts`, also below.
 
-## The three scripts (`skills/explaining/scripts/`)
+## The output style (`output-styles/todd-way.md`)
+
+The skill fires when Claude judges a task to be explanatory. **Todd way** is the same guidance
+made unconditional: an [output style](https://code.claude.com/docs/en/output-styles) is a
+Markdown file whose body Claude Code appends to the system prompt for every turn of the main
+conversation, so the rules hold even on a turn the skill would not have triggered on.
+
+It is a *combination*, not a port. Exactly one output style is active at a time, so selecting
+`Todd way` replaces the built-in **Concise** style rather than stacking with it — which is why
+Concise's six rules are folded in verbatim alongside the skill's five. It sets
+`keep-coding-instructions: true`, because the reader is still doing software engineering; only
+the response shape changes.
+
+**The seam.** The two halves genuinely conflict: Concise says cut, and the explaining rules say
+define every unfamiliar term and ground every claim. Leaving that unresolved would make the
+model guess per turn, so the style states the resolution up front — two registers, and one rule
+decides which applies. Operational output (command results, status, a direct answer to a direct
+question) takes Concise. Explanatory output takes the explaining rules, **and** keeps Concise's
+rules 1, 2, 4 and 6; only "short by default" yields, because a definition the reader needs is
+not padding, while a preamble still is. `evals/evals.json` measures both ends and the seam
+itself — see below.
+
+**Tooling discovery.** Being a system-prompt fragment, the style has no stable relative path to
+the skill's `scripts/` and `references/`, so it discovers them
+(`~/.claude/skills/explaining` from a symlink install, else the plugin cache) and carries a
+fallback for each when the plugin is absent: an inline HTML template for the illustration, and
+an inline copy of the blind-reader brief. The discovery line uses `find` rather than a shell
+glob because a non-matching glob aborts the whole command under zsh — measured, not theorized.
+The inlined brief is pinned byte-identical to `references/blind-reader-brief.md` by
+`test_inlined_blind_reader_brief_is_identical_to_the_shipped_template`, since a drifted copy
+would otherwise fail `check-review-log.ts` far from the edit that caused it.
+
+`install.sh` links it into `~/.claude/output-styles/`. Select it with `/config` → **Output
+style**, or set `"outputStyle": "Todd way"`; it takes effect after `/clear`, since the system
+prompt is read once per session. Subagents are unaffected — they run their own system prompt,
+which is also why the blind-reader review still works: the reader never inherits the style.
+
+## The eval fixture for the style (`evals/evals.json`)
+
+Separate from the skill's own fixture (`skills/explaining/evals/evals.json`, below) so a
+regression in either is still attributable. It declares `kind: "output-style"`, which the
+repo-wide harness supports by writing both halves of a real selection into the scratch project
+scope — the style file *and* `{"outputStyle": …}` in `.claude/settings.json`. Five cases:
+
+| # | Case | What it pins |
+| --- | --- | --- |
+| 1 | `operational-register-stays-terse` | The expensive failure mode of an always-on explanatory style: firing on an operational question. Machine-checked — no `.html`, no `.review.jsonl`, no `explanation.md` may exist afterwards. |
+| 2 | `explanatory-register-terms-introduced-and-claims-grounded` | The term-discipline + grounding pair still lands (the skill's case 1, reused), now with the reply-level term check. |
+| 3 | `seam-explanatory-depth-without-losing-concision` | Both halves at once: depth *and* no preamble, no recap — with the reply-level term check that the first run showed was missing. |
+| 4 | `multi-actor-flow-illustrated` | The rendered HTML diagram, checked by `validate-mermaid.ts`. |
+| 5 | `long-explanation-gets-a-blind-reader-review` | The review actually ran, checked by `check-review-log.ts`; the reply that points at the file does not re-drop the file's jargon. |
+| 6 | `first-sentence-leads-with-the-answer-without-bare-jargon` | "Lead with the result" pulling MVCC / dead tuples / xmin horizon into sentence one with no lead-in — the seam gap measured on 2026-09-08. |
+| 7 | `error-message-question-is-explanatory-in-disguise` | "What does this mean?" on a Postgres FATAL line: the register decision. A bare "raise `max_connections`, add PgBouncer" answers the surface and fails. |
+| 8 | `pr-description-introduces-its-own-terms` | A PR description for a real diff (backoff + jitter + idempotency key + circuit breaker): the register the style names explicitly, where models write for the author. |
+| 9 | `doc-comment-names-the-behaviour-not-a-label` | B4 on a Go function that logs and swallows: the comment must say what happens, never "best-effort" — machine-checked — while the chat reply stays operational. |
+| 10 | `non-english-reply-introduces-borrowed-english-terms` | A Vietnamese question; the reply borrows "hash ring", "virtual node", "hotspot" from English and must gloss them in Vietnamese (`--cues 'là,tức là,…'`). |
+| 11 | `acronym-heavy-domain-expands-every-acronym` | mTLS in a service mesh: SPIFFE / SVID / SDS / xDS sprayed bare is the default; plus the multi-actor diagram. |
+| 12 | `senior-audience-no-padding-but-new-terms-still-introduced` | The over-correction guard: a senior .NET reader gets no `async`/`await` primer, yet `ExecutionContext` and `sync-over-async` still get a lead-in. |
+
+Every explanatory case carries a machine check on the **reply text** itself
+(`check-term-discipline.ts --reply {reply} --terms …`), because the first run showed the LLM
+grader alone cannot hold the line: it passed a baseline reply with ten bare terms as
+"contextualized in place". The fixture's top-level `oracle` states, once, what "introduced"
+means and which direction of error is by design; the per-case rubrics inherit it.
+
+It reuses the skill fixture's `memory-fixture/CLAUDE.md` by relative path rather than copying
+it, so the ambient-memory arm cannot drift between the two suites.
+
+### Measured, 2026-09-08, first run (cases 1 and 3, clean arm, n=1)
+
+| Case | With `Todd way` | Baseline (`--safe-mode`) |
+| --- | --- | --- |
+| 1 — operational stays terse | PASS, 7.1s, 43k tokens | PASS, 7.4s, 31k tokens |
+| 3 — the seam | PASS, **545s, 457k tokens** | PASS, 15.1s, 16k tokens |
+
+Case 1 is a guard, not a differentiator: a two-value config lookup is already terse at baseline,
+so what it proves is the absence of a regression — the always-on explanatory rules did not fire
+on an operational question, machine-confirmed by the no-artifacts check.
+
+Case 3 is the finding, and it is a **cost** finding, not a correctness one. The style passed and
+the answer was good; it cost 36× the wall-clock and 29× the tokens of the same question without
+it. The transcript names the cause exactly: the answer crossed B5's 600-word threshold, so the
+model read the brief from `~/.claude/skills/explaining/references/blind-reader-brief.md`,
+dispatched a `sonnet` blind reader, logged round 1, fixed its findings, dispatched a second
+reader, and reported `PASS after 2 round(s)` — every step working as written. It also rendered
+an `index-write-path.html` diagram under B1.
+
+That is the trade the style makes, and it is worth stating plainly because the threshold means
+it fires on ordinary conversational "why" questions, not just on deliverables: **B5 was designed
+for a skill that only runs when invoked, and an always-on style invokes it far more often.** The
+knob is B5's `When` clause — raise the word threshold, or gate it on an explicit file
+deliverable rather than a word count. Both narrow the rule, so neither is applied here by
+default.
+
+**What that first run did not show, and what it hid.** Both arms PASSED case 3 — the baseline
+too. Its reply dropped MVCC, HOT update, latch, vacuum, dead tuples, bloat, planner, seq scan
+and full-page images with no lead-in, and the grader accepted them as "contextualized in
+place". The styled reply was no better on that axis: its first sentence opened with "the
+write-ahead log, the buffer pool, and vacuum" bare, and the reply summarising
+`explanation.md` re-dropped nine of the eleven listed terms the file had defined. A suite that
+passes both arms is measuring nothing. Three things changed as a result: the reply is now on
+disk for checks (`{reply}`), `check-term-discipline.ts` gates every explanatory case before the
+grader, and B2 gained two paragraphs — the first sentence is not exempt, and every channel the
+reader sees (the reply, not only the file) carries the lead-ins.
+
+Run it yourself before changing that clause; a first run needs a raised timeout, since the
+harness default of 420s is shorter than a two-round review:
+
+```bash
+python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json --eval-id 3 --timeout 1200
+```
+
+```bash
+python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json
+python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json --eval-id 1,3
+```
+
+## The four scripts (`skills/explaining/scripts/`)
 
 - **`validate-mermaid.ts`** — validates mermaid diagram source against the real
   `mermaid.parse()` parser (via a `jsdom` shim), not by LLM opinion. Exits `0` when
@@ -48,6 +165,18 @@ by the two rendering scripts below plus a machine check in this skill's own eval
   `validate-mermaid.ts` looks for), mermaid itself loads from a CDN at view time
   (`@11`, the same major the validator parses with), and light/dark is handled via CSS
   custom properties plus a `prefers-color-scheme: dark` media query.
+- **`check-term-discipline.ts`** — reads one reply (the harness hands it `{reply}`) and a list
+  of terms, and decides per term: `UNUSED` (fine — avoiding jargon is term discipline too),
+  `DEFINED` (the sentence of first use carries a definitional cue attached to the term: a
+  colon, a dash or parenthesis within a word, an appositive comma, a copula within three words,
+  "called"/"known as" before it, or the `expansion (ACRONYM)` shape), or `UNDEFINED`. Fenced
+  code is not prose; a heading or bold lead-in is read with the sentence after it; an
+  all-caps term matches case-sensitively so `HOT` never hits "hot pages"; `--cues` adds
+  another language's cue words (`là`, `tức là`, `gọi là`). Exit `0` when no term is undefined
+  (or at most `--max-undefined`), `1` otherwise, `2` when it could not run. Its oracle is the
+  comment at the top of the file: under-flagging is by design (it is a floor; the grader is
+  the ceiling), over-flagging is a bug. Its tests carry the real baseline reply the grader
+  passed, which the check refuses, and a disciplined rewrite, which it accepts.
 - **`check-review-log.ts`** — reads the `*.review.jsonl` log Rule 5 leaves next to a draft and
   decides whether the review really happened: rounds present and consecutive, never more than
   three, terminated by a `PASS` or by the cap, every rendered brief reproducing the shipped

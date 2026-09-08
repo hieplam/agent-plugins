@@ -37,7 +37,7 @@
     {
       "name": "explaining",
       "source": "./plugins/explaining",
-      "description": "Two eval-proven rules (term discipline + grounding) that make explanatory prose readable without the writer's context; rule candidates that lost or regressed in the isolated A/B eval are excluded."
+      "description": "Explanatory-prose rules proven in an isolated A/B eval — term discipline, grounding, drawn flows, blind-reader review — shipped both as a skill and as the \"Todd way\" output style, which folds them together with the built-in Concise rules into one always-on style."
     }
   ]
 }

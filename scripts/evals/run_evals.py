@@ -22,6 +22,10 @@ For every case, up to two configurations are run:
                      to) via the normal Skill tool and exercise its real body
                      (thresholds, phase names, round caps, references,
                      anti-patterns), not dead-end at a one-line stub.
+                   - output-style evals (kind: "output-style") copy the named
+                     style to .claude/output-styles/ in the scratch cwd AND
+                     write .claude/settings.json {"outputStyle": "<name>"} —
+                     the real two-part shape a user's selection produces.
                    - agent evals (kind: "agent") pass the named agent's
                      real frontmatter + body straight through `--agents` /
                      `--agent`, independent of whether it happens to be
@@ -407,6 +411,31 @@ def install_skill(scratch_dir: Path, skill_dir: Path, skill_name: str) -> Path:
     return dest
 
 
+def install_output_style(scratch_dir: Path, style_path: Path, style_name: str) -> Path:
+    """Select the REAL output style for the with_skill leg, the way a user selects one.
+
+    An output style is not "made available" like a skill — it is *selected*, and
+    the selection is a settings key. So the fixture reproduces both halves of the
+    real shape: the style file at `.claude/output-styles/<file>.md` and
+    `"outputStyle": "<name>"` in `.claude/settings.json`, which run_claude()'s
+    `--setting-sources project` is what loads. Verified empirically: under
+    `--setting-sources project --strict-mcp-config`, a project-scope style set
+    this way does reach the system prompt.
+
+    An output style modifies the system prompt for EVERY turn, so unlike a skill
+    there is nothing to trigger and no way for the executor to decline it. That is
+    what makes the with/without comparison meaningful here: the without_skill leg
+    runs `--safe-mode`, which disables project settings entirely, so it is the
+    same model with the same prompt and no style at all.
+    """
+    dest = scratch_dir / ".claude" / "output-styles" / style_path.name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(style_path, dest)
+    settings = scratch_dir / ".claude" / "settings.json"
+    settings.write_text(json.dumps({"outputStyle": style_name}, indent=2) + "\n")
+    return dest
+
+
 # ---------------------------------------------------------------------------
 # Grading
 # ---------------------------------------------------------------------------
@@ -597,12 +626,35 @@ def classify_check_outcome(returncode: int) -> str:
     return CHECK_UNGRADED
 
 
+# Where the executor's final reply is written inside the scratch dir before checks
+# run, so a check can judge the reply text itself (term discipline, preamble, a
+# required closing line) and not only the files the executor chose to leave behind.
+# Hidden under a dot-directory so it never matches a case's `artifacts` globs or an
+# absence check like `! ls *.md`.
+REPLY_RELPATH = Path(".eval") / "reply.md"
+
+
+def reply_path(scratch: Path) -> Path:
+    """Pure: the path a check's `{reply}` placeholder resolves to."""
+    return scratch / REPLY_RELPATH
+
+
+def write_reply(scratch: Path, final_result: str) -> Path:
+    """Impure edge: persist the executor's final reply for the checks to read."""
+    path = reply_path(scratch)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(final_result, encoding="utf-8")
+    return path
+
+
 def plan_checks(case: dict, skill_dir: Path | None, scratch: Path) -> list:
     """Pure: resolve each declared check into an argv list.
 
-    Placeholder substitution is literal replacement (not str.format) so a command
-    containing other braces is never mangled, and the argv is split with shlex so
-    no shell is involved.
+    Placeholders: `{skill_dir}` (the skill dir, or the plugin root for an
+    output-style fixture), `{scratch}` (the executor's cwd) and `{reply}` (the file
+    holding the executor's final reply, see REPLY_RELPATH). Substitution is literal
+    replacement (not str.format) so a command containing other braces is never
+    mangled, and the argv is split with shlex so no shell is involved.
     """
     planned = []
     for spec in case.get("checks") or []:
@@ -614,7 +666,8 @@ def plan_checks(case: dict, skill_dir: Path | None, scratch: Path) -> list:
         planned_skill_dir = shlex.quote(str(skill_dir)) if skill_dir else ""
         command = (spec["command"]
                     .replace("{skill_dir}", planned_skill_dir)
-                    .replace("{scratch}", shlex.quote(str(scratch))))
+                    .replace("{scratch}", shlex.quote(str(scratch)))
+                    .replace("{reply}", shlex.quote(str(reply_path(scratch)))))
         planned.append({"name": spec["name"], "argv": shlex.split(command)})
     return planned
 
@@ -714,6 +767,20 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
             skill_name = fields.get("name", skill_dir.name)
             if configuration == "with_skill":
                 install_skill(scratch, skill_dir, skill_name)
+        elif kind == "output-style":
+            # skill_dir is the PLUGIN root for this kind (see derive_kind_and_dirs),
+            # so a case's `checks` can reach sibling tooling as
+            # {skill_dir}/skills/<name>/scripts/... without a second placeholder.
+            style_key = case["style"]
+            style_path = skill_dir / "output-styles" / f"{style_key}.md"
+            if not style_path.exists():
+                return {"error": f"no output style file at {style_path}"}
+            fields, _ = parse_frontmatter(style_path)
+            # Per the output-styles contract the file NAME is the style name unless
+            # the frontmatter overrides it — the same precedence Claude Code applies,
+            # so a fixture cannot select a style by a name the product would not.
+            if configuration == "with_skill":
+                install_output_style(scratch, style_path, fields.get("name", style_key))
         elif kind == "agent":
             agent_key = case["agent"]
             agent_path = agents_dir / f"{agent_key}.md"
@@ -746,6 +813,7 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
             print(f"    [{configuration}] grading...", file=sys.stderr)
         grader_start = time.time()
         try:
+            write_reply(scratch, parsed["final_result"])
             check_result = run_checks(plan_checks(case, skill_dir, scratch), scratch, timeout)
         except Exception as e:  # noqa: BLE001 - mirrors the fixture/memory guards above:
             # a malformed `checks` spec (missing "command" -> KeyError, a command that
@@ -962,6 +1030,9 @@ def subject_digests(kind: str, cases: list[dict], agents_dir: Path | None,
     if kind == "agent" and agents_dir:
         names = sorted({c["agent"] for c in cases if "agent" in c})
         paths = [(n, agents_dir / f"{n}.md") for n in names]
+    elif kind == "output-style" and skill_dir:
+        names = sorted({c["style"] for c in cases if "style" in c})
+        paths = [(n, skill_dir / "output-styles" / f"{n}.md") for n in names]
     elif kind == "skill" and skill_dir:
         paths = [(skill_dir.name, skill_dir / "SKILL.md")]
     else:
@@ -995,6 +1066,10 @@ def derive_kind_and_dirs(evals_path: Path, declared_kind: str | None,
     kind = declared_kind or "skill"
     if kind == "agent":
         return kind, None, agents_dir_override or evals_path.parent.parent / "agents"
+    # "output-style" resolves its second slot to the PLUGIN root (evals.json lives at
+    # <plugin>/evals/evals.json, same as an agent fixture) rather than to a skill dir;
+    # run_case reads <plugin>/output-styles/<case.style>.md from it, and a case's
+    # `checks` reach sibling tooling through the same {skill_dir} placeholder.
     return kind, skill_dir_override or evals_path.parent.parent, None
 
 

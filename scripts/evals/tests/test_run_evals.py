@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -43,6 +44,13 @@ class SubjectResolution(unittest.TestCase):
                         (skill_dir / "SKILL.md").is_file(),
                         f"{data['skill_name']}: resolved skill_dir {skill_dir} has no SKILL.md",
                     )
+                elif kind == "output-style":
+                    for case in data["evals"]:
+                        style = skill_dir / "output-styles" / f"{case['style']}.md"
+                        self.assertTrue(
+                            style.is_file(),
+                            f"{data['skill_name']}: case {case['id']} names a missing style {style}",
+                        )
                 else:
                     self.assertTrue(
                         agents_dir.is_dir(),
@@ -379,6 +387,49 @@ class CheckPlanning(unittest.TestCase):
         self.assertEqual(planned, [{"name": "c",
                                      "argv": ["bun", "/Users/John Doe/skill/v.ts"]}])
 
+    def test_reply_placeholder_resolves_to_the_hidden_reply_file_in_scratch(self):
+        """A check that judges the reply text (term discipline) needs a path to it.
+        It lives under a dot-directory so an absence check like `! ls *.md` and an
+        `artifacts: ["*.md"]` glob never see it."""
+        planned = run_evals.plan_checks(
+            {"checks": [{"name": "c", "command": "bun t.ts --reply {reply}"}]},
+            Path("/s"), Path("/tmp/scr"))
+        self.assertEqual(planned[0]["argv"][-1], "/tmp/scr/.eval/reply.md")
+        self.assertEqual(run_evals.reply_path(Path("/tmp/scr")),
+                         Path("/tmp/scr/.eval/reply.md"))
+        self.assertTrue(run_evals.REPLY_RELPATH.parts[0].startswith("."))
+
+
+class RunCaseWritesTheReplyBeforeChecks(unittest.TestCase):
+    """The executor's final reply must be on disk at `{reply}` BEFORE the checks run,
+    or every reply-judging check reads a missing file and is misclassified
+    CHECK_UNGRADED (exit 2) — the case silently drops out of the denominator instead
+    of failing."""
+
+    @staticmethod
+    def _fake_run(*args, **kwargs):
+        return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+            {"type": "result", "result": "The latch is a short lock.", "usage": {}}]}
+
+    def test_check_sees_the_final_reply_text(self):
+        # The check FAILS (exit 1) exactly when the reply text is present, which
+        # short-circuits the grader — so no real `claude -p` is ever reached.
+        case = {"id": 7, "name": "reply", "prompt": "p", "expected_output": "e",
+                "checks": [{"name": "sees-reply",
+                            "command": "sh -c '! grep -q \"short lock\" {reply}'"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "skill"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text("---\nname: throwaway\n---\nbody\n")
+            with mock.patch.object(run_evals, "run_claude", side_effect=self._fake_run):
+                result = run_evals.run_case(
+                    case, "skill", skill_dir, None, "with_skill", timeout=5,
+                    exec_model=None, grader_model=None,
+                    out_dir=Path(tmp) / "out", verbose=False)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["result"]["passed"], 0)
+        self.assertIn("sees-reply", result["expectations"][0]["evidence"])
+
 
 class ArtifactCollection(unittest.TestCase):
     def test_copies_matching_files_and_ignores_the_rest(self):
@@ -511,6 +562,246 @@ class ExplainingIllustrationCase(unittest.TestCase):
         self.assertNotIn("anchored in what tribe-README.md", expected_output)
         self.assertIn("self-contained .html file", expected_output)
         self.assertIn('class="mermaid"', expected_output)
+
+
+TODD_WAY_EVALS = REPO_ROOT / "plugins" / "explaining" / "evals" / "evals.json"
+TODD_WAY_STYLE = REPO_ROOT / "plugins" / "explaining" / "output-styles" / "todd-way.md"
+BRIEF_TEMPLATE = (REPO_ROOT / "plugins" / "explaining" / "skills" / "explaining"
+                  / "references" / "blind-reader-brief.md")
+
+
+def _brief_region(text: str) -> str:
+    """The rendered region of the blind-reader brief template, markers excluded."""
+    return text.split("<!-- BRIEF-START -->")[1].split("<!-- BRIEF-END -->")[0].strip()
+
+
+class OutputStyleKind(unittest.TestCase):
+    """kind: "output-style" resolves and installs the way a real selection does."""
+
+    def test_resolves_its_second_slot_to_the_plugin_root(self):
+        kind, plugin_dir, agents_dir = run_evals.derive_kind_and_dirs(
+            TODD_WAY_EVALS, "output-style")
+        self.assertEqual(kind, "output-style")
+        self.assertIsNone(agents_dir)
+        self.assertEqual(plugin_dir, REPO_ROOT / "plugins" / "explaining")
+        self.assertTrue((plugin_dir / "output-styles").is_dir())
+
+    def test_install_writes_both_halves_of_the_real_selection(self):
+        """A style is SELECTED, not merely made available: the file alone changes
+        nothing without the settings key, which is what --setting-sources project
+        reads. A fixture writing only the file would measure the baseline and
+        label it with_skill."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            run_evals.install_output_style(scratch, TODD_WAY_STYLE, "Todd way")
+            copied = scratch / ".claude" / "output-styles" / "todd-way.md"
+            self.assertTrue(copied.is_file())
+            self.assertEqual(copied.read_text(), TODD_WAY_STYLE.read_text())
+            settings = json.loads((scratch / ".claude" / "settings.json").read_text())
+            self.assertEqual(settings, {"outputStyle": "Todd way"})
+
+    def test_selection_uses_the_frontmatter_name_not_the_file_name(self):
+        """Claude Code's precedence: the file name is the style name UNLESS the
+        frontmatter sets `name`. todd-way.md sets "Todd way", so a fixture keyed
+        on the file stem would select a style that does not exist."""
+        fields, _ = run_evals.parse_frontmatter(TODD_WAY_STYLE)
+        self.assertEqual(fields.get("name"), "Todd way")
+        self.assertNotEqual(fields.get("name"), TODD_WAY_STYLE.stem)
+
+    def test_subject_digests_records_the_style_file(self):
+        cases = json.loads(TODD_WAY_EVALS.read_text())["evals"]
+        digests = run_evals.subject_digests(
+            "output-style", cases, None, REPO_ROOT / "plugins" / "explaining")
+        self.assertIn("todd-way", digests)
+        self.assertNotIn("error", digests["todd-way"])
+        self.assertGreater(digests["todd-way"]["chars"], 0)
+
+
+class ToddWayEvalsFixture(unittest.TestCase):
+    def setUp(self):
+        self.data = json.loads(TODD_WAY_EVALS.read_text())
+        self.cases = {c["name"]: c for c in self.data["evals"]}
+
+    def test_declares_the_output_style_kind_and_one_style_per_case(self):
+        self.assertEqual(self.data["kind"], "output-style")
+        for case in self.data["evals"]:
+            self.assertEqual(case["style"], "todd-way")
+
+    def test_reuses_the_skills_memory_fixture_instead_of_duplicating_it(self):
+        rel = self.data["memory_fixture"]
+        self.assertTrue((TODD_WAY_EVALS.parent / rel).is_file())
+        self.assertEqual(
+            (TODD_WAY_EVALS.parent / rel).resolve(),
+            (REPO_ROOT / "plugins/explaining/skills/explaining/evals"
+                          "/memory-fixture/CLAUDE.md").resolve())
+
+    def test_covers_both_registers_and_the_seam(self):
+        """A combined style can regress in two directions — losing concision on
+        operational replies, or losing depth on explanatory ones. One case pins
+        each end, and one pins them holding at the same time."""
+        self.assertIn("operational-register-stays-terse", self.cases)
+        self.assertIn("explanatory-register-terms-introduced-and-claims-grounded", self.cases)
+        self.assertIn("seam-explanatory-depth-without-losing-concision", self.cases)
+
+    def test_operational_case_is_machine_checked_for_absent_artifacts(self):
+        """The expensive failure mode of an always-on explanatory style is that it
+        fires on operational questions too. That is checkable without a grader:
+        no .html, no review log, no explanation.md should exist afterwards."""
+        case = self.cases["operational-register-stays-terse"]
+        command = case["checks"][0]["command"]
+        for artifact in ("*.html", "*.review.jsonl", "explanation.md"):
+            self.assertIn(artifact, command)
+        self.assertNotIn("artifacts", case)
+
+    def test_prompts_never_leak_the_behavior_under_test(self):
+        for case in self.data["evals"]:
+            prompt = case["prompt"].lower()
+            for word in ("diagram", "mermaid", "html", "illustrate", "illustration",
+                          "draw", "render", "concise", "blind reader", "brief",
+                          "terse", "short", "define", "definition", "jargon",
+                          "glossary", "acronym", "plain words", "best-effort"):
+                self.assertNotIn(word, prompt,
+                                  f"case {case['id']} prompt leaks {word!r}")
+
+    def test_covers_the_jargon_edge_cases(self):
+        """Where a model answers with bare jargon and the first fixture could not
+        tell: the first sentence under 'lead with the result', a 'what does this
+        mean' question that is explanatory in disguise, a PR description, a doc
+        comment reaching for a label, a non-English reply borrowing English terms,
+        an acronym-heavy domain, and the over-correction guard for a senior
+        audience."""
+        for name in ("first-sentence-leads-with-the-answer-without-bare-jargon",
+                      "error-message-question-is-explanatory-in-disguise",
+                      "pr-description-introduces-its-own-terms",
+                      "doc-comment-names-the-behaviour-not-a-label",
+                      "non-english-reply-introduces-borrowed-english-terms",
+                      "acronym-heavy-domain-expands-every-acronym",
+                      "senior-audience-no-padding-but-new-terms-still-introduced"):
+            self.assertIn(name, self.cases)
+
+    def test_every_explanatory_case_is_machine_checked_on_the_reply(self):
+        """The LLM grader passed a baseline reply with ten bare terms as
+        'contextualized in place' (2026-09-08). The floor is therefore a machine
+        check on the REPLY text, not on files the executor chose to leave behind,
+        for every case whose job is understanding."""
+        operational = {"operational-register-stays-terse",
+                       "doc-comment-names-the-behaviour-not-a-label",
+                       "multi-actor-flow-illustrated"}
+        for case in self.data["evals"]:
+            if case["name"] in operational:
+                continue
+            commands = [c["command"] for c in case.get("checks", [])]
+            self.assertTrue(any("check-term-discipline.ts" in c and "{reply}" in c
+                                for c in commands),
+                            f"case {case['id']} has no reply-level term check")
+
+    def test_non_english_case_passes_its_own_definitional_cues(self):
+        case = self.cases["non-english-reply-introduces-borrowed-english-terms"]
+        command = case["checks"][0]["command"]
+        self.assertIn("--cues", command)
+        self.assertIn("là", command)
+
+    def test_label_case_is_machine_checked_for_the_label_and_intact_code(self):
+        case = self.cases["doc-comment-names-the-behaviour-not-a-label"]
+        command = case["checks"][0]["command"]
+        self.assertIn("best[- ]?effort", command)
+        self.assertIn("^// persistSnapshot", command)
+        self.assertIn("snapshot persist failed", command)
+
+    def test_fixture_sources_exist(self):
+        for case in self.data["evals"]:
+            for entry in case.get("files", []):
+                if "source" in entry:
+                    self.assertTrue((REPO_ROOT / entry["source"]).is_file(),
+                                    f"case {case['id']} fixture missing: {entry['source']}")
+
+    def test_the_fixture_names_its_oracle(self):
+        """Brief-contracts: a parser/heuristic check with no named oracle burns
+        rounds. The fixture states what 'introduced' means and which direction of
+        error is by design, once, for every case to inherit."""
+        self.assertIn("oracle", self.data)
+        self.assertIn("NOT an introduction", self.data["oracle"])
+
+    def test_every_planned_check_argv_points_at_a_real_script(self):
+        _, plugin_dir, _ = run_evals.derive_kind_and_dirs(
+            TODD_WAY_EVALS, self.data.get("kind"))
+        for case in self.data["evals"]:
+            for planned in run_evals.plan_checks(case, plugin_dir, Path("/tmp/scratch")):
+                target = planned["argv"][1]
+                if target == "-c":  # `sh -c '...'` check, nothing on disk to point at
+                    continue
+                self.assertTrue(Path(target).is_file(),
+                                 f"check points at a missing script: {planned['argv']}")
+
+    def test_the_skills_own_fixture_is_left_alone(self):
+        """The style is an addition, not a replacement: the skill keeps its own
+        eval fixture, so a regression in either can still be attributed."""
+        skill_data = json.loads(EXPLAINING_EVALS.read_text())
+        self.assertEqual([c["id"] for c in skill_data["evals"]], [1, 2, 3, 4])
+        self.assertNotEqual(skill_data.get("kind"), "output-style")
+
+
+class ToddWayStyle(unittest.TestCase):
+    def setUp(self):
+        self.fields, self.body = run_evals.parse_frontmatter(TODD_WAY_STYLE)
+
+    def test_frontmatter_matches_the_output_styles_contract(self):
+        self.assertEqual(self.fields["name"], "Todd way")
+        self.assertTrue(self.fields["description"])
+        # The reader is still doing software engineering; only the response shape
+        # changes. Omitting this would strip Claude Code's built-in engineering
+        # instructions, which is a far bigger change than the one intended.
+        self.assertEqual(self.fields["keep-coding-instructions"], "true")
+
+    def test_carries_every_concise_rule(self):
+        for rule in ("Lead with the result", "Cut narration, keep substance",
+                      "Short by default", "State things plainly",
+                      "Give full detail on request",
+                      "Never trade correctness for brevity"):
+            self.assertIn(rule, self.body, f"missing Concise rule: {rule!r}")
+
+    def test_carries_every_explaining_rule(self):
+        for marker in ("### B1 — Illustrate a flow instead of narrating it",
+                        "### B2 — Term discipline: define before use",
+                        "### B3 — Grounding: anchor every abstract claim",
+                        "### B4 — Name the behaviour, not a concept",
+                        "### B5 — Blind-reader review before delivery"):
+            self.assertIn(marker, self.body, f"missing explaining rule: {marker!r}")
+
+    def test_names_the_seam_that_resolves_the_two_conflicting_defaults(self):
+        """Concise says cut; explaining says define and ground. Combining them
+        without stating which wins where leaves the model to guess per turn, and
+        the guess is what the seam case in the fixture measures."""
+        self.assertIn("Only \"short by default\" yields", self.body)
+
+    def test_closes_the_two_jargon_gaps_the_first_run_exposed(self):
+        """Measured 2026-09-08 on the seam case: with the style on, the reply's
+        first sentence dropped 'write-ahead log, buffer pool, vacuum' bare (Part A's
+        'lead with the result' pulled jargon into sentence one), and the reply that
+        summarised explanation.md re-dropped nine of eleven listed terms the file
+        had defined. B2 now says both explicitly."""
+        self.assertIn("The first sentence is not exempt", self.body)
+        self.assertIn("Every channel the reader sees", self.body)
+
+    def test_inlined_blind_reader_brief_is_identical_to_the_shipped_template(self):
+        """The style inlines the brief as its no-plugin fallback, and
+        check-review-log.ts asserts a rendered brief reproduces the shipped
+        template verbatim. A drifted copy would fail that checker at review time,
+        far from the edit that caused it — so the drift is caught here instead."""
+        template = _brief_region(BRIEF_TEMPLATE.read_text())
+        self.assertIn(template, self.body,
+                       "the brief inlined in todd-way.md has drifted from "
+                       "references/blind-reader-brief.md")
+
+    def test_script_discovery_never_relies_on_a_shell_glob(self):
+        """A non-matching glob aborts the whole command under zsh, so a glob in
+        the discovery line breaks the discovery it exists to do — measured, not
+        theorized: the glob form returned an empty path on this machine."""
+        discovery = [ln for ln in self.body.splitlines() if "EXPLAINING=" in ln
+                      or "explaining/skills/explaining" in ln]
+        self.assertTrue(discovery, "no tooling-discovery block found")
+        self.assertTrue(any("find " in ln for ln in discovery))
+        self.assertFalse(any("cache/*" in ln for ln in discovery))
 
 
 if __name__ == "__main__":

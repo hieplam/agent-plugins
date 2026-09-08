@@ -1,5 +1,5 @@
 {
   "name": "explaining",
-  "description": "Two eval-proven rules (term discipline + grounding) that make explanatory prose readable by someone without the writer's context. Rules retained only if they beat baseline in an isolated A/B eval; refuted candidates excluded.",
-  "version": "1.0.0"
+  "description": "Makes explanatory prose readable by someone without the writer's context: term discipline, grounding, multi-actor flows rendered to validated HTML, and a blind-reader pass before delivery. Ships as a skill and as the \"Todd way\" output style, which combines those rules with the built-in Concise rules. Rules retained only if they beat baseline in an isolated A/B eval; refuted candidates excluded.",
+  "version": "1.1.0"
 }
