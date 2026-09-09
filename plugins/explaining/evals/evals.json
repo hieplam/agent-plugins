@@ -1,7 +1,7 @@
 {
   "skill_name": "todd-way",
   "kind": "output-style",
-  "memory_fixture": "../skills/explaining/evals/memory-fixture/CLAUDE.md",
+  "memory_fixture": "memory-fixture/CLAUDE.md",
   "oracle": "Term discipline is judged on the REPLY the user reads, by check-term-discipline.ts first and the grader second. A listed term the reply never uses needs no definition. A listed term the reply uses counts as introduced only when the sentence of its first use (or the heading it sits under) states in plain words what it is: an appositive, a parenthetical, an acronym expansion, or an 'X is/means ...' clause. Using a term in a sentence that happens to make sense, or naming a product that has it ('MVCC engines like Postgres'), is NOT an introduction. The script is a floor: it refuses a reply that leaves more than a third of the listed terms it uses bare (and always tolerates one) (a baseline reply leaves 60–100% bare), and under-checking below that line is by design; the grader applies the same oracle to what the script cannot see.",
   "evals": [
     {
@@ -37,7 +37,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'ack floor,AckExplicit,AckAll,AckNone,ack wait,AckWait,redelivery,MaxDeliver,MaxAckPending,work queue,WorkQueue,pull consumer,push consumer,durable consumer,NAK,in-progress ack'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'ack floor,AckExplicit,AckAll,AckNone,ack wait,AckWait,redelivery,MaxDeliver,MaxAckPending,work queue,WorkQueue,pull consumer,push consumer,durable consumer,NAK,in-progress ack'"
         }
       ]
     },
@@ -51,7 +51,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'B-tree,MVCC,HOT,WAL,write-ahead log,checkpoint,page split,latch,buffer pool,vacuum,dead tuple,bloat,planner,seq scan,fill factor,write amplification,change buffer'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'B-tree,MVCC,HOT,WAL,write-ahead log,checkpoint,page split,latch,buffer pool,vacuum,dead tuple,bloat,planner,seq scan,fill factor,write amplification,change buffer'"
         }
       ]
     },
@@ -64,13 +64,13 @@
       "files": [
         {
           "path": "tribe-README.md",
-          "source": "plugins/explaining/skills/explaining/evals/fixtures/tribe-README.md"
+          "source": "plugins/explaining/evals/fixtures/tribe-README.md"
         }
       ],
       "checks": [
         {
           "name": "html-mermaid-parses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/validate-mermaid.ts --html-glob *.html"
+          "command": "bun {skill_dir}/tools/scripts/validate-mermaid.ts --html-glob *.html"
         }
       ],
       "artifacts": [
@@ -87,11 +87,11 @@
       "checks": [
         {
           "name": "blind-reader-review-log",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-review-log.ts --log-glob *.review.jsonl --prompt 'Explain how a write-ahead log keeps a database durable and crash consistent: what gets written and in what order, how a checkpoint interacts with log truncation, what an fsync actually guarantees, and how recovery replays the log after a crash. Write it for a backend developer who has never implemented one.'"
+          "command": "bun {skill_dir}/tools/scripts/check-review-log.ts --log-glob *.review.jsonl --prompt 'Explain how a write-ahead log keeps a database durable and crash consistent: what gets written and in what order, how a checkpoint interacts with log truncation, what an fsync actually guarantees, and how recovery replays the log after a crash. Write it for a backend developer who has never implemented one.'"
         },
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'LSN,log sequence number,redo,undo,ARIES,torn write,full-page write,dirty,group commit,fsync barrier,double-write buffer'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'LSN,log sequence number,redo,undo,ARIES,torn write,full-page write,dirty,group commit,fsync barrier,double-write buffer'"
         }
       ],
       "artifacts": [
@@ -110,7 +110,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'dead tuple,MVCC,xmin horizon,bloat,visibility map,free space map,replication slot,hot_standby_feedback,wraparound,pg_repack,VACUUM FULL,idle in transaction,autovacuum_vacuum_scale_factor,autovacuum_vacuum_threshold,HOT'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'dead tuple,MVCC,xmin horizon,bloat,visibility map,free space map,replication slot,hot_standby_feedback,wraparound,pg_repack,VACUUM FULL,idle in transaction,autovacuum_vacuum_scale_factor,autovacuum_vacuum_threshold,HOT'"
         }
       ]
     },
@@ -124,7 +124,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'max_connections,superuser_reserved_connections,connection pooler,PgBouncer,transaction pooling,session pooling,idle in transaction,backend process'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'max_connections,superuser_reserved_connections,connection pooler,PgBouncer,transaction pooling,session pooling,idle in transaction,backend process'"
         }
       ]
     },
@@ -143,7 +143,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'exponential backoff,jitter,thundering herd,idempotency key,circuit breaker,half-open,retry storm,Retry-After'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'exponential backoff,jitter,thundering herd,idempotency key,circuit breaker,half-open,retry storm,Retry-After'"
         }
       ],
       "artifacts": [
@@ -182,7 +182,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'hash ring,virtual node,vnode,hotspot,replication factor,rehash,key space,successor' --cues 'là,tức là,nghĩa là,gọi là,được gọi là,còn gọi là,hiểu là,tức'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'hash ring,virtual node,vnode,hotspot,replication factor,rehash,key space,successor' --cues 'là,tức là,nghĩa là,gọi là,được gọi là,còn gọi là,hiểu là,tức'"
         }
       ]
     },
@@ -196,11 +196,11 @@
       "checks": [
         {
           "name": "html-mermaid-parses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/validate-mermaid.ts --html-glob *.html"
+          "command": "bun {skill_dir}/tools/scripts/validate-mermaid.ts --html-glob *.html"
         },
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'SPIFFE,SVID,SDS,xDS,SAN,CSR,trust bundle,trust domain,workload identity,istiod,Envoy'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'SPIFFE,SVID,SDS,xDS,SAN,CSR,trust bundle,trust domain,workload identity,istiod,Envoy'"
         }
       ],
       "artifacts": [
@@ -219,7 +219,7 @@
       "checks": [
         {
           "name": "reply-introduces-every-term-it-uses",
-          "command": "bun {skill_dir}/skills/explaining/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'TaskAwaiter,UnsafeOnCompleted,sync-over-async,thread pool starvation,ConfigureAwaitOptions,IAsyncStateMachine,ICriticalNotifyCompletion'"
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'TaskAwaiter,UnsafeOnCompleted,sync-over-async,thread pool starvation,ConfigureAwaitOptions,IAsyncStateMachine,ICriticalNotifyCompletion'"
         }
       ]
     }

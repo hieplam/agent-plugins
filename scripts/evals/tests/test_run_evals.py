@@ -480,8 +480,7 @@ class ArtifactCollection(unittest.TestCase):
                         f"artifact landed outside dest: {path}")
 
 
-MEMORY_FIXTURE = (REPO_ROOT
-                  / "plugins/explaining/skills/explaining/evals/memory-fixture/CLAUDE.md")
+MEMORY_FIXTURE = REPO_ROOT / "plugins/explaining/evals/memory-fixture/CLAUDE.md"
 
 # The mem arm measures whether realistic ambient memory SUPPRESSES the behavior. If the
 # fixture names the vocabulary of the behavior it would seed it instead, and the arm
@@ -505,68 +504,48 @@ class MemoryFixture(unittest.TestCase):
         self.assertGreater(len(MEMORY_FIXTURE.read_text().split()), 80)
 
 
-EXPLAINING_EVALS = (REPO_ROOT
-                    / "plugins/explaining/skills/explaining/evals/evals.json")
+ARCHIVED_SKILL_EVALS = REPO_ROOT / "archive/skills/explaining/evals/evals.json"
 
 
-class ExplainingIllustrationCase(unittest.TestCase):
+class ArchivedSkillFixture(unittest.TestCase):
+    """The skill's own fixture is frozen with the skill, outside `plugins/`.
+
+    Two things must stay true, and neither is obvious from reading either file:
+    the harness's `--all` discovery must NOT pick it up (it globs
+    `plugins/**/evals/evals.json`, so an archive under `plugins/` would silently
+    re-enter the suite), and its `source`/`memory_fixture` paths must still resolve,
+    so a resurrection is a `git mv` rather than a debugging session.
+    """
+
     def setUp(self):
-        self.data = json.loads(EXPLAINING_EVALS.read_text())
-        self.case = next(c for c in self.data["evals"]
-                          if c["name"] == "tribe-overall-flow-illustrated")
+        self.data = json.loads(ARCHIVED_SKILL_EVALS.read_text())
 
-    def test_fixture_declares_its_memory_fixture(self):
-        self.assertEqual(self.data["memory_fixture"], "memory-fixture/CLAUDE.md")
+    def test_is_not_discovered_by_the_harness(self):
+        discovered = {p.resolve() for p in run_evals.discover_evals_json()}
+        self.assertNotIn(ARCHIVED_SKILL_EVALS.resolve(), discovered)
+
+    def test_its_fixture_paths_still_resolve_after_the_move(self):
         self.assertTrue(
-            (EXPLAINING_EVALS.parent / self.data["memory_fixture"]).is_file())
+            (ARCHIVED_SKILL_EVALS.parent / self.data["memory_fixture"]).is_file())
+        for case in self.data["evals"]:
+            for entry in case.get("files", []):
+                if "source" in entry:
+                    self.assertTrue((REPO_ROOT / entry["source"]).is_file(),
+                                    f"archived fixture source missing: {entry['source']}")
 
-    def test_uses_the_real_tribe_readme_by_source_not_an_inlined_copy(self):
-        self.assertEqual(self.case["files"],
-                          [{"path": "tribe-README.md",
-                            "source": "plugins/explaining/skills/explaining/"
-                                      "evals/fixtures/tribe-README.md"}])
-
-    def test_prompt_never_asks_for_the_artifact(self):
-        prompt = self.case["prompt"].lower()
-        for word in ("diagram", "mermaid", "html", "chart", "picture", "image",
-                      "illustrate", "illustration", "draw", "visual", "render"):
-            self.assertNotIn(word, prompt,
-                              f"prompt leaks the behavior under test: {word!r}")
-
-    def test_declares_a_machine_check_and_collects_the_artifact(self):
-        self.assertEqual(len(self.case["checks"]), 1)
-        command = self.case["checks"][0]["command"]
-        self.assertIn("{skill_dir}", command)
-        self.assertIn("validate-mermaid.ts", command)
-        self.assertEqual(self.case["artifacts"], ["*.html"])
-
-    def test_the_planned_check_argv_points_at_a_real_script(self):
-        _, skill_dir, _ = run_evals.derive_kind_and_dirs(
-            EXPLAINING_EVALS, self.data.get("kind"))
-        planned = run_evals.plan_checks(self.case, skill_dir, Path("/tmp/scratch"))
-        self.assertTrue(Path(planned[0]["argv"][1]).is_file(),
-                         f"check points at a missing script: {planned[0]['argv']}")
-
-    def test_existing_cases_are_untouched(self):
-        self.assertEqual([c["id"] for c in self.data["evals"]][:3], [1, 2, 3])
-
-    def test_expected_output_is_gradeable_from_the_transcript_alone(self):
-        """The grader (run_evals.grade()) only ever sees parsed["transcript"] and
-        parsed["final_result"] — extract_metrics() never captures a tool_result's
-        content, so text read from tribe-README.md via the agent's Read call never
-        reaches the grader (GRADER_INSTRUCTIONS even says "you have no tools —
-        judge only from the text given below"). expected_output must not ask the
-        grader to fact-check claims against a source it is never shown (F22); it
-        must still require the deterministic .html/mermaid artifact."""
-        expected_output = self.case["expected_output"]
-        self.assertNotIn("anchored in what tribe-README.md", expected_output)
-        self.assertIn("self-contained .html file", expected_output)
-        self.assertIn('class="mermaid"', expected_output)
+    def test_its_checks_point_at_the_relocated_tooling(self):
+        for case in self.data["evals"]:
+            for check in case.get("checks", []):
+                self.assertNotIn("{skill_dir}", check["command"],
+                                 "the archived fixture has no installed skill_dir to expand")
+                target = check["command"].split()[1]
+                self.assertTrue((REPO_ROOT / target).is_file(),
+                                f"archived check points at a missing script: {target}")
 
 
 TODD_WAY_EVALS = REPO_ROOT / "plugins" / "explaining" / "evals" / "evals.json"
 TODD_WAY_STYLE = REPO_ROOT / "plugins" / "explaining" / "output-styles" / "todd-way.md"
-BRIEF_TEMPLATE = (REPO_ROOT / "plugins" / "explaining" / "skills" / "explaining"
+BRIEF_TEMPLATE = (REPO_ROOT / "plugins" / "explaining" / "tools"
                   / "references" / "blind-reader-brief.md")
 
 
@@ -627,13 +606,22 @@ class ToddWayEvalsFixture(unittest.TestCase):
         for case in self.data["evals"]:
             self.assertEqual(case["style"], "todd-way")
 
-    def test_reuses_the_skills_memory_fixture_instead_of_duplicating_it(self):
+    def test_owns_its_memory_fixture_at_the_plugin_level(self):
+        """The fixture used to borrow the skill's copy by a `../skills/...` relative
+        path. With the skill archived, the memory fixture and the tribe README moved
+        up to the plugin's own `evals/`, so nothing the live suite needs sits under
+        `archive/`."""
         rel = self.data["memory_fixture"]
+        self.assertEqual(rel, "memory-fixture/CLAUDE.md")
         self.assertTrue((TODD_WAY_EVALS.parent / rel).is_file())
-        self.assertEqual(
-            (TODD_WAY_EVALS.parent / rel).resolve(),
-            (REPO_ROOT / "plugins/explaining/skills/explaining/evals"
-                          "/memory-fixture/CLAUDE.md").resolve())
+
+    def test_illustration_case_uses_the_real_tribe_readme_by_source(self):
+        """Inlining a copy of the README into the fixture would let the copy drift
+        from the document a reader would actually be handed."""
+        case = self.cases["multi-actor-flow-illustrated"]
+        self.assertEqual(case["files"],
+                         [{"path": "tribe-README.md",
+                           "source": "plugins/explaining/evals/fixtures/tribe-README.md"}])
 
     def test_covers_both_registers_and_the_seam(self):
         """A combined style can regress in two directions — losing concision on
@@ -733,12 +721,13 @@ class ToddWayEvalsFixture(unittest.TestCase):
                 self.assertTrue(Path(target).is_file(),
                                  f"check points at a missing script: {planned['argv']}")
 
-    def test_the_skills_own_fixture_is_left_alone(self):
-        """The style is an addition, not a replacement: the skill keeps its own
-        eval fixture, so a regression in either can still be attributed."""
-        skill_data = json.loads(EXPLAINING_EVALS.read_text())
-        self.assertEqual([c["id"] for c in skill_data["evals"]], [1, 2, 3, 4])
-        self.assertNotEqual(skill_data.get("kind"), "output-style")
+    def test_is_the_only_live_explaining_fixture(self):
+        """The style replaced the skill rather than joining it, so this fixture is
+        the only one the harness runs for these rules. Two live fixtures would split
+        the evidence and let a regression hide in whichever one nobody ran."""
+        live = [p for p in run_evals.discover_evals_json()
+                if "explaining" in str(p)]
+        self.assertEqual([p.resolve() for p in live], [TODD_WAY_EVALS.resolve()])
 
 
 class ToddWayStyle(unittest.TestCase):
@@ -800,12 +789,32 @@ class ToddWayStyle(unittest.TestCase):
                        "the brief inlined in todd-way.md has drifted from "
                        "references/blind-reader-brief.md")
 
+    def test_discovery_path_is_the_one_install_sh_actually_creates(self):
+        """The style names an installed path as a literal string; install.sh creates
+        it. Nothing else couples them, so a rename on either side would leave the
+        style silently falling back to its inline template on every machine."""
+        installer = (REPO_ROOT / "install.sh").read_text()
+        self.assertIn('"$CLAUDE_DIR/tools/$plugin"', installer)
+        self.assertIn("~/.claude/tools/explaining", self.body)
+
+    def test_every_tooling_path_the_style_names_exists_under_tools(self):
+        """Each `$EXPLAINING/...` path in the style, resolved against the real
+        directory install.sh links. A moved script shows up here, not as a runtime
+        fallback nobody notices."""
+        import re as _re
+        tools = REPO_ROOT / "plugins" / "explaining" / "tools"
+        refs = sorted(set(_re.findall(r'\$EXPLAINING/([\w./-]+)', self.body)))
+        self.assertGreaterEqual(len(refs), 3, f"found suspiciously few tooling refs: {refs}")
+        for rel in refs:
+            with self.subTest(rel=rel):
+                self.assertTrue((tools / rel).is_file(), f"style names a missing path: {rel}")
+
     def test_script_discovery_never_relies_on_a_shell_glob(self):
         """A non-matching glob aborts the whole command under zsh, so a glob in
         the discovery line breaks the discovery it exists to do — measured, not
         theorized: the glob form returned an empty path on this machine."""
         discovery = [ln for ln in self.body.splitlines() if "EXPLAINING=" in ln
-                      or "explaining/skills/explaining" in ln]
+                      or "explaining/tools" in ln]
         self.assertTrue(discovery, "no tooling-discovery block found")
         self.assertTrue(any("find " in ln for ln in discovery))
         self.assertFalse(any("cache/*" in ln for ln in discovery))

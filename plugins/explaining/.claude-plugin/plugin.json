@@ -1,5 +1,5 @@
 {
   "name": "explaining",
-  "description": "Makes explanatory prose readable by someone without the writer's context: term discipline, grounding, multi-actor flows rendered to validated HTML, and a blind-reader pass before delivery. Ships as a skill and as the \"Todd way\" output style, which combines those rules with the built-in Concise rules. Rules retained only if they beat baseline in an isolated A/B eval; refuted candidates excluded.",
-  "version": "1.1.0"
+  "description": "The \"Todd way\" output style: makes explanatory prose readable by someone without the writer's context — term discipline, grounding, multi-actor flows rendered to validated HTML, and a blind-reader pass before delivery — folded together with the built-in Concise rules so it is always on rather than waiting to be invoked. Ships its runtime scripts in tools/. Rules retained only if they beat baseline in an isolated A/B eval; refuted candidates excluded. The skill this replaced is frozen under archive/skills/explaining/.",
+  "version": "2.0.0"
 }
