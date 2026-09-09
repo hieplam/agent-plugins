@@ -5,6 +5,18 @@ description: Use when producing any prose whose main job is to make a reader und
 
 # Explaining
 
+> **ARCHIVED — do not install.** These rules now ship only as the **Todd way** output
+> style (`plugins/explaining/output-styles/todd-way.md`), which is always on instead of
+> waiting to be invoked and folds in the built-in Concise rules. This file is kept for its
+> Evidence section (the A/B numbers that justify rules 1 and 2, measured against *this*
+> wording) and for its own eval fixture, which stays runnable from
+> `archive/skills/explaining/evals/evals.json`. It is outside `plugins/`, so `install.sh`
+> cannot install it and the eval harness's `--all` discovery cannot pick it up.
+>
+> Two rules were amended in the style after this file was frozen and are **not** reflected
+> below: the first sentence is not exempt from term discipline, and a file on disk is not a
+> substitute for the reply. The style's `evals/evals.json` is the live fixture.
+
 ## Overview
 
 Default LLM technical prose imitates expert-to-expert register: terms appear without introduction and claims stay abstract. These two rules replace that default. They are the pair that won an isolated A/B eval against baseline and against each rule alone — apply **both** to any explanatory prose you produce.

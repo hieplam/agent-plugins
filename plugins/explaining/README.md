@@ -1,11 +1,27 @@
 # Explaining
 
-A skill that makes explanatory prose (design docs, PR descriptions, teaching-style
+An output style that makes explanatory prose (design docs, PR descriptions, teaching-style
 answers, architecture write-ups) readable by someone without the writer's context, and
 turns a multi-actor or conditional flow into a real, renderable diagram instead of
 narration nobody can follow.
 
-## The five rules (`skills/explaining/SKILL.md`)
+It ships as **one output style plus the scripts that style invokes** — nothing else:
+
+| Directory | What it is |
+| --- | --- |
+| `output-styles/todd-way.md` | the style itself, appended to the system prompt every turn |
+| `tools/scripts/` | four `bun` CLIs the style runs; installed to `~/.claude/tools/explaining/` |
+| `tools/references/` | the blind-reader brief template the style renders |
+| `evals/` | the regression fixture, its file fixtures and its ambient-memory fixture |
+
+> **The skill is retired.** These rules used to ship as a `SKILL.md` that fired only when
+> Claude judged a task explanatory. That file is now frozen at
+> `archive/skills/explaining/SKILL.md`, outside `plugins/`, so neither `install.sh` nor the
+> eval harness's `--all` discovery can reach it. Two amendments made after it was frozen live
+> only in the style. Read the archived file for its Evidence section — the A/B numbers behind
+> rules 1 and 2, measured against that exact wording — and nothing else.
+
+## The five rules (now Part B of the style)
 
 1. **Term discipline: define before use.** Any new concept, technology, or technical
    term must be briefly defined or contextualized the first time it appears — never
@@ -36,14 +52,16 @@ by the two rendering scripts below plus a machine check in this skill's own eval
 
 ## The output style (`output-styles/todd-way.md`)
 
-The skill fires when Claude judges a task to be explanatory. **Todd way** is the same guidance
-made unconditional: an [output style](https://code.claude.com/docs/en/output-styles) is a
-Markdown file whose body Claude Code appends to the system prompt for every turn of the main
-conversation, so the rules hold even on a turn the skill would not have triggered on.
+**Todd way** makes the guidance unconditional: an
+[output style](https://code.claude.com/docs/en/output-styles) is a Markdown file whose body
+Claude Code appends to the system prompt for every turn of the main conversation, so the rules
+hold on every turn — including the ones the retired skill would never have triggered on. That
+unconditionality is the whole reason the skill was retired rather than kept alongside: two
+carriers of the same rules drift, and only one of them is ever the one that fired.
 
 It is a *combination*, not a port. Exactly one output style is active at a time, so selecting
 `Todd way` replaces the built-in **Concise** style rather than stacking with it — which is why
-Concise's six rules are folded in verbatim alongside the skill's five. It sets
+Concise's six rules are folded in verbatim alongside the five explanatory ones. It sets
 `keep-coding-instructions: true`, because the reader is still doing software engineering; only
 the response shape changes.
 
@@ -56,25 +74,32 @@ rules 1, 2, 4 and 6; only "short by default" yields, because a definition the re
 not padding, while a preamble still is. `evals/evals.json` measures both ends and the seam
 itself — see below.
 
-**Tooling discovery.** Being a system-prompt fragment, the style has no stable relative path to
-the skill's `scripts/` and `references/`, so it discovers them
-(`~/.claude/skills/explaining` from a symlink install, else the plugin cache) and carries a
-fallback for each when the plugin is absent: an inline HTML template for the illustration, and
+**Tooling discovery.** Being a system-prompt fragment, the style has no relative path back to
+the repo the way a `SKILL.md` does, so its scripts must sit at a path it can name literally.
+That path is `~/.claude/tools/explaining/`, which `install.sh` creates by linking this plugin's
+`tools/` directory; the fallback is the plugin cache. `install.sh` and the style are coupled by
+nothing but those two strings, so
+`test_discovery_path_is_the_one_install_sh_actually_creates` asserts they still match, and
+`test_every_tooling_path_the_style_names_exists_under_tools` resolves every `$EXPLAINING/...`
+path in the style against the real directory. Both rules also carry a fallback for when the
+plugin is absent: an inline HTML template for the illustration, and
 an inline copy of the blind-reader brief. The discovery line uses `find` rather than a shell
 glob because a non-matching glob aborts the whole command under zsh — measured, not theorized.
 The inlined brief is pinned byte-identical to `references/blind-reader-brief.md` by
 `test_inlined_blind_reader_brief_is_identical_to_the_shipped_template`, since a drifted copy
 would otherwise fail `check-review-log.ts` far from the edit that caused it.
 
-`install.sh` links it into `~/.claude/output-styles/`. Select it with `/config` → **Output
-style**, or set `"outputStyle": "Todd way"`; it takes effect after `/clear`, since the system
-prompt is read once per session. Subagents are unaffected — they run their own system prompt,
-which is also why the blind-reader review still works: the reader never inherits the style.
+`install.sh` links the style into `~/.claude/output-styles/` and the tooling into
+`~/.claude/tools/explaining/`. Select it with `/config` → **Output style**, or set
+`"outputStyle": "Todd way"`; it takes effect after `/clear`, since the system prompt is read
+once per session. Subagents are unaffected — they run their own system prompt, which is also
+why the blind-reader review still works: the reader never inherits the style.
 
 ## The eval fixture for the style (`evals/evals.json`)
 
-Separate from the skill's own fixture (`skills/explaining/evals/evals.json`, below) so a
-regression in either is still attributable. It declares `kind: "output-style"`, which the
+The only live fixture for these rules — `test_is_the_only_live_explaining_fixture` fails if a
+second one appears, because two would split the evidence and let a regression hide in whichever
+one nobody ran. It declares `kind: "output-style"`, which the
 repo-wide harness supports by writing both halves of a real selection into the scratch project
 scope — the style file *and* `{"outputStyle": …}` in `.claude/settings.json`. Five cases:
 
@@ -99,8 +124,9 @@ grader alone cannot hold the line: it passed a baseline reply with ten bare term
 "contextualized in place". The fixture's top-level `oracle` states, once, what "introduced"
 means and which direction of error is by design; the per-case rubrics inherit it.
 
-It reuses the skill fixture's `memory-fixture/CLAUDE.md` by relative path rather than copying
-it, so the ambient-memory arm cannot drift between the two suites.
+Its ambient-memory fixture (`evals/memory-fixture/CLAUDE.md`) and file fixtures
+(`evals/fixtures/`) live at the plugin level, so nothing the live suite needs sits under
+`archive/`.
 
 ### Measured, 2026-09-08, first run (cases 1 and 3, clean arm, n=1)
 
@@ -116,7 +142,8 @@ on an operational question, machine-confirmed by the no-artifacts check.
 Case 3 is the finding, and it is a **cost** finding, not a correctness one. The style passed and
 the answer was good; it cost 36× the wall-clock and 29× the tokens of the same question without
 it. The transcript names the cause exactly: the answer crossed B5's 600-word threshold, so the
-model read the brief from `~/.claude/skills/explaining/references/blind-reader-brief.md`,
+model read the brief from the installed template (then
+`~/.claude/skills/explaining/references/`, now `~/.claude/tools/explaining/references/`),
 dispatched a `sonnet` blind reader, logged round 1, fixed its findings, dispatched a second
 reader, and reported `PASS after 2 round(s)` — every step working as written. It also rendered
 an `index-write-path.html` diagram under B1.
@@ -194,7 +221,7 @@ python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json
 python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json --eval-id 1,3
 ```
 
-## The four scripts (`skills/explaining/scripts/`)
+## The four scripts (`tools/scripts/`)
 
 - **`validate-mermaid.ts`** — validates mermaid diagram source against the real
   `mermaid.parse()` parser (via a `jsdom` shim), not by LLM opinion. Exits `0` when
@@ -242,19 +269,18 @@ Both rendering scripts (`validate-mermaid.ts` and `render-illustration.ts`) are 
 from the directory where the diagram/output files live (their path flags — `--diagram`,
 `--out`, `--html-glob`, `--file` — are relative to `cwd`).
 
-This `scripts/` directory is **skill-local** (`plugins/explaining/skills/explaining/scripts/`),
-which matters for installability: `install.sh` symlinks a skill's whole directory into
-`~/.claude/skills/<name>/` (`scripts/` included), so these three scripts install
-automatically with no installer change. A *plugin-level* `scripts/` — directly under
-`plugins/explaining/`, not under a `skills/<name>/` — is a different case: `install.sh`'s
-whitelist recognizes that name too, but only to skip it ("repo-invoked, NOT installed"),
-never to link it. See `ref-plugin-layout`'s How section for the golden plugin layout.
+These live under `tools/`, not `scripts/`, and the distinction is load-bearing. `install.sh`
+links `tools/` into `~/.claude/tools/<plugin>/` because an output style needs its scripts at a
+nameable path; a plugin-level `scripts/` is recognised by the same whitelist only to be
+*skipped* ("repo-invoked, NOT installed"). They used to sit inside the skill directory and
+install as a side effect of the skill being linked — which is exactly what tied the style's
+runtime to a skill nobody wanted installed any more.
 
-## The blind-reader brief template (`skills/explaining/references/blind-reader-brief.md`)
+## The blind-reader brief template (`tools/references/blind-reader-brief.md`)
 
-Rule 5's brief is rendered from `references/blind-reader-brief.md`, which ships inside the
-skill directory (`skills/explaining/`, not a plugin-level `scripts/`) so the eval harness
-installs it with the skill along with everything else the directory carries. Its three slots
+Rule 5's brief is rendered from `tools/references/blind-reader-brief.md`, a sibling of
+`tools/scripts/` so that `check-review-log.ts` still resolves it as `../references/...` and the
+style still names it `$EXPLAINING/references/...`. Its three slots
 — `artifact_path`, `audience`, `language` — are the only values allowed to reach the blind
 reader; nothing else (the user's request, the author's reasoning, an earlier round's
 findings) may cross into the rendered text. The reader model is a documented knob that
@@ -271,9 +297,16 @@ misreporting a diagram as invalid.
 
 ## Eval fixture
 
-The skill's regression fixture lives at `skills/explaining/evals/evals.json` (next to
-`SKILL.md`, per `ref-evals-fixture`), with its ambient-memory fixture at
-`skills/explaining/evals/memory-fixture/CLAUDE.md`. Run it with
-`scripts/evals/run_evals.py --evals plugins/explaining/skills/explaining/evals/evals.json`
-from the repo root — see `scripts/evals/README.md` for the harness's own flags
-(`--arm`, `--dry-run`, etc.).
+The live regression fixture is `evals/evals.json`, described above. Run it from the repo root:
+
+```bash
+python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json
+```
+
+See `scripts/evals/README.md` for the harness's own flags (`--arm`, `--eval-id`, `--dry-run`,
+`--timeout`).
+
+The retired skill's four-case fixture is frozen alongside it at
+`archive/skills/explaining/evals/evals.json`, with its `source` and `memory_fixture` paths
+repointed at this plugin so it still runs if anyone resurrects it. It is deliberately outside
+`plugins/`, so `run_evals.py --all` does not discover it.

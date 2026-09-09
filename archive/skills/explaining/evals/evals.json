@@ -1,7 +1,7 @@
 {
   "skill_name": "explaining",
   "kind": "skill",
-  "memory_fixture": "memory-fixture/CLAUDE.md",
+  "memory_fixture": "../../../../plugins/explaining/evals/memory-fixture/CLAUDE.md",
   "evals": [
     {
       "id": 1,
@@ -23,15 +23,20 @@
       "prompt": "Read tribe-README.md in this directory. Explain, for a developer who has never seen this system, how work actually moves through the tribe end to end: who hands work to whom, what each role returns to its caller, which paths are conditional, and where the boundary between the two reviewer roles falls. Make the whole flow understandable.",
       "expected_output": "The response makes the multi-actor flow understandable AND leaves behind a rendered illustration the reader can open: a self-contained .html file written into the working directory whose mermaid source sits in an element with class=\"mermaid\" and parses. The diagram covers the dispatch chain across the roles and at least one conditional path. The accompanying prose obeys the skill's existing rules — every role name and piece of jargon is defined or contextualized at first use, and the explanation of who hands work to whom and what each role returns is specific and internally consistent rather than vague or hand-wavy. Producing only a fenced code block, or only prose with no file on disk, does not satisfy this.",
       "files": [
-        { "path": "tribe-README.md", "source": "plugins/explaining/skills/explaining/evals/fixtures/tribe-README.md" }
+        {
+          "path": "tribe-README.md",
+          "source": "plugins/explaining/evals/fixtures/tribe-README.md"
+        }
       ],
       "checks": [
         {
           "name": "html-mermaid-parses",
-          "command": "bun {skill_dir}/scripts/validate-mermaid.ts --html-glob *.html"
+          "command": "bun plugins/explaining/tools/scripts/validate-mermaid.ts --html-glob *.html"
         }
       ],
-      "artifacts": ["*.html"]
+      "artifacts": [
+        "*.html"
+      ]
     },
     {
       "id": 4,
@@ -42,10 +47,14 @@
       "checks": [
         {
           "name": "blind-reader-review-log",
-          "command": "bun {skill_dir}/scripts/check-review-log.ts --log-glob *.review.jsonl --prompt 'Explain how a write-ahead log keeps a database durable and crash consistent: what gets written and in what order, how a checkpoint interacts with log truncation, what an fsync actually guarantees, and how recovery replays the log after a crash. Write it for a backend developer who has never implemented one.'"
+          "command": "bun plugins/explaining/tools/scripts/check-review-log.ts --log-glob *.review.jsonl --prompt 'Explain how a write-ahead log keeps a database durable and crash consistent: what gets written and in what order, how a checkpoint interacts with log truncation, what an fsync actually guarantees, and how recovery replays the log after a crash. Write it for a backend developer who has never implemented one.'"
         }
       ],
-      "artifacts": ["*.md", "*.review.jsonl", "*.html"]
+      "artifacts": [
+        "*.md",
+        "*.review.jsonl",
+        "*.html"
+      ]
     }
   ]
 }

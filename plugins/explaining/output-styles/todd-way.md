@@ -47,8 +47,8 @@ B1 and B5 use scripts and a template that ship with the `explaining` plugin. Fin
 ```bash
 # `find`, not a glob: under zsh a non-matching glob aborts the whole command,
 # which would break the very discovery this line exists to do.
-EXPLAINING=$( { ls -d ~/.claude/skills/explaining 2>/dev/null
-                find ~/.claude/plugins -type d -path '*explaining/skills/explaining' 2>/dev/null
+EXPLAINING=$( { ls -d ~/.claude/tools/explaining 2>/dev/null
+                find ~/.claude/plugins -type d -path '*explaining/tools' 2>/dev/null
               } | head -1 )
 ```
 

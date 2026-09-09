@@ -74,7 +74,7 @@ scratch working directory — it never edits a skill's or agent's runtime files.
 
 Usage:
     scripts/evals/run_evals.py --evals plugins/splitting-plans/skills/splitting-plans/evals/evals.json
-    scripts/evals/run_evals.py --evals plugins/explaining/skills/explaining/evals/evals.json --eval-id 3,6
+    scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json --eval-id 3,6
     scripts/evals/run_evals.py --all                      # every evals.json under plugins/
     scripts/evals/run_evals.py --all --mode with_skill     # skip the baseline, just prove it runs
     scripts/evals/run_evals.py --all --dry-run             # list what would run, no API calls

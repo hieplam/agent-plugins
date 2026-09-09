@@ -15,6 +15,10 @@
 #   - agents/*.md      -> $CLAUDE_DIR/agents/<file>
 #   - skills/<name>/   -> $CLAUDE_DIR/skills/<name>
 #   - output-styles/*.md -> $CLAUDE_DIR/output-styles/<file>
+#   - tools/           -> $CLAUDE_DIR/tools/<plugin>  (runtime tooling an output style,
+#                         CLAUDE.md snippet or hook invokes at a stable installed path —
+#                         an output style is a system-prompt fragment with no relative
+#                         path back to the repo, so it needs one)
 #   - install.sh       -> executed as a post-install hook (CLAUDE_DIR is passed through);
 #                         claude-md/ holds snippets consumed by such hooks;
 #                         rules/ holds machine-global rule files such hooks link
@@ -47,6 +51,7 @@ list_plugins() {
     [ -d "$p/agents" ] && parts+=("agents: $(find "$p/agents" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
     [ -d "$p/skills" ] && parts+=("skills: $(find "$p/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')")
     [ -d "$p/output-styles" ] && parts+=("output-styles: $(find "$p/output-styles" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
+    [ -d "$p/tools" ] && parts+=("tools")
     say "  - $name (${parts[*]:-empty})"
   done
 }
@@ -110,6 +115,16 @@ install_plugin() {
     done
   fi
 
+  # Runtime tooling for an output style. A style is a system-prompt fragment: it has no
+  # relative path back to the repo the way a SKILL.md does, so its scripts must sit at a
+  # path the style can name literally. The whole directory is linked under the plugin's
+  # own name, so two plugins' tools cannot collide.
+  if [ -d "$dir/tools" ]; then
+    found_any=1
+    mkdir -p "$CLAUDE_DIR/tools"
+    link_one "$dir/tools" "$CLAUDE_DIR/tools/$plugin" "tools  $plugin"
+  fi
+
   # Post-install hook: a plugin-level install.sh (e.g. appends claude-md/ snippets).
   if [ -f "$dir/install.sh" ]; then
     found_any=1
@@ -128,7 +143,7 @@ install_plugin() {
       # definitions; the plugin's own install.sh hook links both into
       # $CLAUDE_DIR/rules/ and $CLAUDE_DIR/canvases/, so the root installer
       # skips both silently.
-      agents|skills|output-styles|claude-md|hooks|rules|canvases|.claude-plugin) ;;
+      agents|skills|output-styles|tools|claude-md|hooks|rules|canvases|.claude-plugin) ;;
       # scripts/ holds validator scripts invoked from the repo checkout
       # directly (not symlinked); intentionally not installed, skip silently.
       scripts) ;;
@@ -137,7 +152,7 @@ install_plugin() {
     esac
   done
 
-  [ "$found_any" -eq 1 ] || warn "$plugin: no agents/, skills/ or output-styles/ to install"
+  [ "$found_any" -eq 1 ] || warn "$plugin: no agents/, skills/, output-styles/ or tools/ to install"
 }
 
 main() {
@@ -146,7 +161,7 @@ main() {
     exit 0
   fi
   if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 0
   fi
 
