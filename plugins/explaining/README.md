@@ -10,6 +10,7 @@ It ships as **one output style plus the scripts that style invokes** — nothing
 | Directory | What it is |
 | --- | --- |
 | `output-styles/todd-way.md` | the style itself, appended to the system prompt every turn |
+| `output-styles/design-system/` | Reading, the look every HTML page the style renders wears; installed to `~/.claude/output-styles/design-system/` |
 | `tools/scripts/` | four `bun` CLIs the style runs; installed to `~/.claude/tools/explaining/` |
 | `tools/references/` | the blind-reader brief template the style renders |
 | `evals/` | the regression fixture, its file fixtures and its ambient-memory fixture |
@@ -230,11 +231,12 @@ python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json -
   diagram artifact is found at all, and `2` when the parser itself could not run (no
   dependency, no network) — a validator that cannot run is not a failing diagram, so
   `2` is a distinct, non-blocking outcome from `1`.
-- **`render-illustration.ts`** — renders one self-contained HTML document from a
-  mermaid diagram: the diagram sits inside a `<div class="mermaid">` element (what
-  `validate-mermaid.ts` looks for), mermaid itself loads from a CDN at view time
-  (`@11`, the same major the validator parses with), and light/dark is handled via CSS
-  custom properties plus a `prefers-color-scheme: dark` media query.
+- **`render-illustration.ts`** — renders one self-contained HTML document in the Reading
+  design system (below): one mermaid diagram with `--diagram`, or any other visualization with
+  `--body <fragment.html>`, a fragment built from the classes `specimen.html` shows. A diagram
+  sits inside a `<div class="mermaid">` element (what `validate-mermaid.ts` looks for); mermaid
+  itself loads from a CDN at view time (`@11`, the same major the validator parses with) and is
+  the page's only network dependency, because the fonts are embedded as `data:` URIs.
 - **`check-term-discipline.ts`** — reads one reply (the harness hands it `{reply}`) and a list
   of terms, and decides per term: `UNUSED` (fine — avoiding jargon is term discipline too),
   `DEFINED` (the sentence of first use carries a definitional cue attached to the term: a
@@ -275,6 +277,38 @@ nameable path; a plugin-level `scripts/` is recognised by the same whitelist onl
 *skipped* ("repo-invoked, NOT installed"). They used to sit inside the skill directory and
 install as a side effect of the skill being linked — which is exactly what tied the style's
 runtime to a skill nobody wanted installed any more.
+
+## The Reading design system (`output-styles/design-system/`)
+
+Every HTML page the style produces wears one look, so the style fixes it rather than leaving
+each page to reinvent it. Before Reading, the renderer emitted white pages in the system sans at
+16px, and mermaid capped each diagram at its natural width: on a 2560×1440 screen a sequence
+diagram sat at 1161px against the left edge, its labels at 16px, with half the screen empty.
+Measured on the same screen after: that diagram is 1494px wide (held to the screen height), a
+left-to-right flowchart fills 2406px, labels read at 20–30px, and body text at 22px.
+
+| File | What it carries |
+| --- | --- |
+| `reading.css` | tokens (paper, ink, gold accent; a warm dark "night" set for dark mode or `data-theme="dark"`), the fluid type scale, the full-width page, and every class the specimen shows |
+| `reading.js` | themes mermaid from the colour tokens and sizes each diagram: never wider than its column, at most 2× its natural size, held to 78% of the screen height — but never so small that its labels drop below body-text size (a diagram that tall scrolls down), and never below 14px labels to fit the width (a diagram that wide scrolls sideways in its frame) |
+| `specimen.html` | a body fragment using every class once — the vocabulary the style tells the model to build from |
+| `fonts/` | Libre Caslon Text (400, 400 italic, 700) and the Alegreya subset that supplies its missing Vietnamese letters, with their OFL licences |
+
+It derives from Claude Design's built-in "Classical" theme (the gold `#b68235` accent, hairline
+rules, colour drawn as stroke rather than fill), re-set as an old book on paper-coloured ground.
+Caslon has no Vietnamese letters, and the browser's own fallback for them drops tone marks
+("tiền" renders as "tiên"); the `Reading Vietnamese` face fills exactly those code points from
+Alegreya, scaled 115% to Caslon's x-height, so every other letter of a Vietnamese word stays
+Caslon.
+
+The directory carries no `.md` file, because Claude Code reads Markdown under `output-styles/`
+as a style (`test_the_design_system_carries_no_markdown`). `install.sh` links every
+subdirectory of a plugin's `output-styles/` beside the style files, which is how this one
+reaches the literal path the style names. The renderer finds it as a sibling of its own real
+path — two levels up from `tools/scripts/` — after resolving symlinks, since the two are
+installed as separate links. The style's no-tooling fallback restates Reading's colour tokens
+inline, and `test_the_fallback_template_wears_the_design_systems_colours` pins them to
+`reading.css`.
 
 ## The blind-reader brief template (`tools/references/blind-reader-brief.md`)
 

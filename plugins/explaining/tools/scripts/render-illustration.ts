@@ -1,13 +1,18 @@
-// Self-contained mermaid illustration renderer for the `explaining` skill.
+// Self-contained page renderer for the `explaining` output style: a mermaid illustration
+// (`--diagram`) or any other HTML visualization (`--body`), dressed in the Reading design
+// system that ships beside the style in output-styles/design-system/.
 //
-// Pure core (escapeHtml, renderIllustrationHtml) is exported for direct unit testing
-// and has no side effects, and is dependency-free so it works offline: mermaid itself
-// is loaded from the CDN inside the rendered document, not bundled here. The impure
-// edge (the CLI in main()) reads flags/files, writes the output file, and prints its
-// absolute path.
+// Pure core (escapeHtml, fontRefs, embedFonts, renderPage, renderIllustrationHtml) is
+// exported for direct unit testing, has no side effects, and takes the design system as
+// an argument. The impure edge (loadTheme and the CLI in main()) reads the design system,
+// flags and files, writes the output file, and prints its absolute path. The design
+// system's fonts are embedded in every page; mermaid alone is loaded from its CDN inside
+// the rendered document, not bundled here.
 
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // Pure core
@@ -25,19 +30,42 @@ export function escapeHtml(text: string): string {
 }
 
 export type Illustration = { title: string; diagram: string; caption: string };
+export type Page = { title: string; lede: string; body: string };
 
-const MERMAID_CDN_URL = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+/** The design system, as text: reading.css (its fonts already embedded) is inlined into
+ * `<style>`, reading.js into the module script after the mermaid import. */
+export type Theme = { css: string; script: string };
 
-/** Render one self-contained HTML document: title, mermaid diagram inside
- * `<div class="mermaid">`, and a caption. Mermaid itself is loaded from the CDN at
- * view time (major @11, the same major the validator parses with, deliberately —
- * what validates is what renders); nothing else is fetched remotely. Light/dark is
- * driven by CSS custom properties plus a `prefers-color-scheme: dark` override, and
- * the module script initializes mermaid with a matching theme. */
-export function renderIllustrationHtml({ title, diagram, caption }: Illustration): string {
+export const MERMAID_CDN_URL = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+/** A font the stylesheet bundles: `url('fonts/<name>.woff2')`. The name pattern admits no
+ * `/` or `..`, so a reference can never reach outside the design system's fonts/ dir. */
+const FONT_REF = /url\('fonts\/([A-Za-z0-9_.-]+\.woff2)'\)/g;
+
+/** Every font file name `css` references, each once, in order of first use. */
+export function fontRefs(css: string): string[] {
+  return [...new Set([...css.matchAll(FONT_REF)].map((m) => m[1]))];
+}
+
+/** Replace each bundled-font url() in `css` with the file's bytes as a data: URI, so the
+ * rendered page carries its fonts inside it. `fonts` maps file name to base64. Throws
+ * when `css` references a font `fonts` does not carry. */
+export function embedFonts(css: string, fonts: Record<string, string>): string {
+  return css.replace(FONT_REF, (_, name: string) => {
+    const base64 = fonts[name];
+    if (base64 === undefined) throw new Error(`the stylesheet references fonts/${name}, which is missing`);
+    return `url(data:font/woff2;base64,${base64})`;
+  });
+}
+
+/** Render one self-contained HTML document: the title (and an optional lede) in the
+ * page header, then `body` verbatim. `body` is trusted, author-written HTML; the title
+ * and lede are escaped. Mermaid is loaded from the CDN at view time (major @11, the same
+ * major the validator parses with, deliberately — what validates is what renders), and
+ * the theme's script renders and sizes every `.mermaid` block in the body. */
+export function renderPage({ title, lede, body }: Page, theme: Theme): string {
   const safeTitle = escapeHtml(title);
-  const safeCaption = escapeHtml(caption);
-  const safeDiagram = escapeHtml(diagram);
+  const ledeHtml = lede ? `\n<p class="lede">${escapeHtml(lede)}</p>` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -46,86 +74,89 @@ export function renderIllustrationHtml({ title, diagram, caption }: Illustration
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${safeTitle}</title>
 <style>
-  :root {
-    --bg: #ffffff;
-    --fg: #1a1a1a;
-    --caption-fg: #555555;
-    --border: #dddddd;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1a1a1a;
-      --fg: #f0f0f0;
-      --caption-fg: #aaaaaa;
-      --border: #444444;
-    }
-  }
-  body {
-    margin: 0;
-    padding: 2rem;
-    background: var(--bg);
-    color: var(--fg);
-    font-family: system-ui, sans-serif;
-  }
-  h1 {
-    font-size: 1.25rem;
-    margin: 0 0 1rem 0;
-  }
-  .diagram-wrap {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1rem;
-    overflow: auto;
-  }
-  figcaption {
-    margin-top: 0.75rem;
-    color: var(--caption-fg);
-    font-size: 0.9rem;
-  }
+${theme.css.trim()}
 </style>
 </head>
 <body>
-<h1>${safeTitle}</h1>
-<figure class="diagram-wrap">
-<div class="mermaid">${safeDiagram}</div>
-<figcaption>${safeCaption}</figcaption>
-</figure>
+<main class="page">
+<header class="page-head">
+<h1>${safeTitle}</h1>${ledeHtml}
+</header>
+${body.trim()}
+</main>
 <script type="module">
-  import mermaid from '${MERMAID_CDN_URL}';
-  mermaid.initialize({
-    startOnLoad: true,
-    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
-  });
+import mermaid from '${MERMAID_CDN_URL}';
+${theme.script.trim()}
+await renderDiagrams(mermaid);
 </script>
 </body>
 </html>
 `;
 }
 
+/** One diagram as a full-width figure, with the caption beneath it. */
+export function renderIllustrationHtml({ title, diagram, caption }: Illustration, theme: Theme): string {
+  const body = `<figure class="diagram">
+<div class="mermaid">${escapeHtml(diagram)}</div>
+<figcaption>${escapeHtml(caption)}</figcaption>
+</figure>`;
+  return renderPage({ title, lede: '', body }, theme);
+}
+
 // ---------------------------------------------------------------------------
-// CLI
+// Impure edge
 // ---------------------------------------------------------------------------
+
+/** Where the design system ships: beside the output style, two levels up from this
+ * script. The script's own path is resolved through symlinks first, because install.sh
+ * links tools/ and output-styles/ into ~/.claude separately — only the real path in the
+ * plugin keeps the two as siblings. */
+export const DESIGN_SYSTEM_DIR = resolve(
+  dirname(realpathSync(fileURLToPath(import.meta.url))),
+  '../../output-styles/design-system',
+);
+
+/** Thrown when the design system cannot be read. Caught by `main()`. */
+export class ThemeError extends Error {}
+
+export async function loadTheme(dir: string = DESIGN_SYSTEM_DIR): Promise<Theme> {
+  try {
+    const [css, script] = await Promise.all([
+      readFile(join(dir, 'reading.css'), 'utf8'),
+      readFile(join(dir, 'reading.js'), 'utf8'),
+    ]);
+    const fonts: Record<string, string> = {};
+    await Promise.all(fontRefs(css).map(async (name) => {
+      fonts[name] = (await readFile(join(dir, 'fonts', name))).toString('base64');
+    }));
+    return { css: embedFonts(css, fonts), script };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ThemeError(`could not read the design system at ${dir}: ${message}`);
+  }
+}
 
 /** Thrown when a flag that expects a value (`--title`, `--caption`, `--diagram`,
- * `--out`) is the last argument, or is immediately followed by another flag. Caught by
- * `main()` and reported as a clean error message, never an uncaught stack trace. */
+ * `--body`, `--out`) is the last argument, or is immediately followed by another flag,
+ * or when `--diagram` and `--body` are both given. Caught by `main()` and reported as a
+ * clean error message, never an uncaught stack trace. */
 class CliArgError extends Error {}
 
-const KNOWN_FLAGS = new Set(['--title', '--caption', '--diagram', '--out']);
+const KNOWN_FLAGS = new Set(['--title', '--caption', '--diagram', '--body', '--out']);
 
-function parseArgs(argv: string[]): {
+type Args = {
   title: string;
   caption: string;
   diagram: string | null;
+  body: string | null;
   out: string | null;
-} {
-  let title = '';
-  let caption = '';
-  let diagram: string | null = null;
-  let out: string | null = null;
+};
+
+function parseArgs(argv: string[]): Args {
+  const args: Args = { title: '', caption: '', diagram: null, body: null, out: null };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
-    if (flag === '--title' || flag === '--caption' || flag === '--diagram' || flag === '--out') {
+    if (KNOWN_FLAGS.has(flag)) {
       const value = argv[++i];
       if (value === undefined) throw new CliArgError(`${flag} requires a value`);
       // A value that is itself a recognized flag name means the actual value was
@@ -135,13 +166,13 @@ function parseArgs(argv: string[]): {
       if (KNOWN_FLAGS.has(value)) {
         throw new CliArgError(`${flag} requires a value, got the flag ${value} instead`);
       }
-      if (flag === '--title') title = value;
-      else if (flag === '--caption') caption = value;
-      else if (flag === '--diagram') diagram = value;
-      else out = value;
+      args[flag.slice(2) as keyof Args] = value;
     }
   }
-  return { title, caption, diagram, out };
+  if (args.diagram !== null && args.body !== null) {
+    throw new CliArgError('give --diagram or --body, not both');
+  }
+  return args;
 }
 
 async function readStdin(): Promise<string> {
@@ -150,30 +181,46 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function main(argv: string[]): Promise<number> {
-  let title: string, caption: string, diagram: string | null, out: string | null;
+/** Flags: `--title`, `--caption`, `--out` (required), and the content — `--diagram
+ * <file.mmd>` for one diagram (stdin when neither content flag is given), or `--body
+ * <fragment.html>` for any other visualization, whose `--caption` becomes the lede. */
+export async function main(argv: string[], themeDir: string = DESIGN_SYSTEM_DIR): Promise<number> {
+  let args: Args;
   try {
-    ({ title, caption, diagram, out } = parseArgs(argv));
+    args = parseArgs(argv);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`render-illustration: ${message}`);
     return 1;
   }
+  const { title, caption, diagram, body, out } = args;
   if (out === null) {
     console.error('render-illustration: --out is required');
     return 1;
   }
 
-  let diagramText: string;
+  let theme: Theme;
   try {
-    diagramText = diagram !== null ? await readFile(resolve(diagram), 'utf8') : await readStdin();
+    theme = await loadTheme(themeDir);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`render-illustration: could not read diagram: ${message}`);
+    console.error(`render-illustration: ${message}`);
     return 1;
   }
 
-  const html = renderIllustrationHtml({ title, diagram: diagramText.trim(), caption });
+  let content: string;
+  try {
+    if (body !== null) content = await readFile(resolve(body), 'utf8');
+    else content = diagram !== null ? await readFile(resolve(diagram), 'utf8') : await readStdin();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`render-illustration: could not read ${body !== null ? 'body' : 'diagram'}: ${message}`);
+    return 1;
+  }
+
+  const html = body !== null
+    ? renderPage({ title, lede: caption, body: content }, theme)
+    : renderIllustrationHtml({ title, diagram: content.trim(), caption }, theme);
   const outPath = resolve(out);
   try {
     await writeFile(outPath, html, 'utf8');

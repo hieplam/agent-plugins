@@ -80,32 +80,49 @@ confirm the render step ran, then re-validate. Exit `2`: the validator could not
 dependency, no network) — ship the file and say the diagram is unvalidated. A validator that
 cannot run is not a failing diagram.
 
+**Every HTML page wears the Reading design system.** Any HTML you write for the user to read —
+a diagram, a comparison, a table of numbers, a timeline — is rendered by
+`render-illustration.ts`, which dresses it in Reading, the user's own look: book paper, Caslon,
+the full width of the screen, diagrams scaled to fill it. It lives at
+`~/.claude/output-styles/design-system/`. One diagram is `--diagram`. For anything else, write
+only the page's content as an HTML fragment, built from the classes shown in
+`~/.claude/output-styles/design-system/specimen.html` — read it first, and use nothing it does
+not show — then render with `--body fragment.html`, where `--caption` becomes the lede. Never
+write your own `<style>`, font, colour or page width: a hand-built page is how the narrow column
+of small text came back. Run the validator only on a page that holds a diagram.
+
 **Fallback.** With no `$EXPLAINING`, write the HTML yourself to the same contract — diagram
-source HTML-escaped inside a `<div class="mermaid">`, mermaid loaded from the CDN at view time:
+source HTML-escaped inside a `<div class="mermaid">`, mermaid loaded from the CDN at view time —
+in Reading's colours, with a system book face standing in for the bundled Caslon:
 
 ```html
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>TITLE</title>
 <style>
-  :root { --bg:#fff; --fg:#1a1a1a; --caption-fg:#555; --border:#ddd; }
+  :root { --paper:#f6efdf; --ink:#2e2418; --ink-soft:#6b5a44; --rule:#d8c9aa; --accent:#b68235; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#1a1a1a; --fg:#f0f0f0; --caption-fg:#aaa; --border:#444; }
+    :root { --paper:#1c1915; --ink:#e8dcc4; --ink-soft:#a89877; --rule:#3f362a; --accent:#d6a55a; }
   }
-  body { margin:0; padding:2rem; background:var(--bg); color:var(--fg);
-         font-family:system-ui, sans-serif; }
-  .diagram-wrap { border:1px solid var(--border); border-radius:8px; padding:1rem; overflow:auto; }
-  figcaption { margin-top:.75rem; color:var(--caption-fg); font-size:.9rem; }
+  html { font-size: clamp(17px, 0.5vw + 9px, 24px); }
+  body { margin:0; padding:2rem clamp(1.25rem, 3vw, 5rem); background:var(--paper); color:var(--ink);
+         font-family:"Iowan Old Style", Palatino, Georgia, serif; line-height:1.6; }
+  h1 { font-weight:400; font-size:2.6rem; border-bottom:1px solid var(--rule); padding-bottom:1rem; }
+  .mermaid { display:flex; justify-content:center; }
+  .mermaid svg { width:100%; max-width:none !important; height:auto; max-height:78vh; }
+  figcaption { font-style:italic; color:var(--ink-soft); max-width:74ch; }
 </style></head><body>
 <h1>TITLE</h1>
-<figure class="diagram-wrap">
+<figure>
 <div class="mermaid">DIAGRAM SOURCE, HTML-ESCAPED</div>
 <figcaption>CAPTION</figcaption>
 </figure>
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: true,
-    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' });
+  const v = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  mermaid.initialize({ startOnLoad: true, theme: 'base', themeVariables: {
+    background: v('--paper'), primaryColor: v('--paper'), primaryTextColor: v('--ink'),
+    primaryBorderColor: v('--accent'), lineColor: v('--ink-soft'), fontFamily: 'Georgia, serif' } });
 </script></body></html>
 ```
 
