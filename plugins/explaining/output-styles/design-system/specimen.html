@@ -1,0 +1,115 @@
+<!-- Reading design system — specimen. A body fragment, not a whole page: render it with
+     render-illustration.ts --body specimen.html. Every class reading.css defines is used
+     here once; build visualizations from these and nothing else. -->
+
+<section class="with-margin">
+  <div>
+    <span class="kicker">Chapter one</span>
+    <p>An order is placed in three moves. The gateway hands the request to the order
+    service, which reserves stock before it asks for money, so a customer is never charged
+    for something that is not on the shelf. The payment service answers yes or no, and
+    only a yes lets the order be announced to the rest of the system.</p>
+    <p>The diagram below follows one request from left to right. Read the boxed region
+    as a fork in the road: exactly one of its two halves happens.</p>
+  </div>
+  <aside class="margin-note">A <em>margin note</em> carries an aside the main text can
+  live without: a definition, a source, or a warning for one reader in ten.</aside>
+</section>
+
+<figure class="diagram">
+<div class="mermaid">sequenceDiagram
+    participant C as Client
+    participant G as API Gateway
+    participant O as Order Service
+    participant P as Payment Service
+    participant Q as Outbox Queue
+    C->>G: POST /orders (Idempotency-Key)
+    G->>O: forward request
+    O->>O: reserve stock
+    alt payment succeeds
+        O->>P: charge card
+        P-->>O: 200 charged
+        O->>Q: publish OrderPlaced
+        O-->>G: 201 Created
+    else payment declined
+        P-->>O: 402 declined
+        O->>O: release stock
+        O-->>G: 409 Conflict
+    end
+    G-->>C: response</div>
+<figcaption>A figure takes the full page width; its caption sits beneath it in italics, like a plate in a book.</figcaption>
+</figure>
+
+<h2>Two facing pages</h2>
+
+<section class="spread">
+  <div>
+    <h3>The cache, left page</h3>
+    <figure>
+    <div class="mermaid">flowchart TD
+    A[Request arrives] --> B{Cache hit?}
+    B -- yes --> C[Serve from cache]
+    B -- no --> D[Query database]
+    D --> E{Row found?}
+    E -- yes --> F[Write to cache]
+    F --> C
+    E -- no --> G[Return 404]</div>
+    <figcaption>A diagram inside a column fills that column, so give it a tall shape
+    (<code>flowchart TD</code>). A wide one (<code>flowchart LR</code>, a sequence diagram)
+    takes the full page width instead, or its text shrinks to fit.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <h3>The numbers, right page</h3>
+    <p>A spread sets two columns side by side with a hairline between them. Below 1100px
+    it folds into one column.</p>
+    <p lang="vi">Tiếng Việt dùng cùng phông chữ: dịch vụ đơn hàng giữ hàng trước khi thu tiền.</p>
+    <table>
+      <thead><tr><th>Path</th><th class="num">p50 ms</th><th class="num">p99 ms</th></tr></thead>
+      <tbody>
+        <tr><td>Cache hit</td><td class="num">0.4</td><td class="num">2.1</td></tr>
+        <tr><td>Cache miss, row found</td><td class="num">6.8</td><td class="num">41.0</td></tr>
+        <tr><td>Cache miss, no row</td><td class="num">5.9</td><td class="num">38.2</td></tr>
+      </tbody>
+      <caption>Numbers line up on the right with tabular figures (<code>td.num</code>).</caption>
+    </table>
+  </div>
+</section>
+
+<h2>Cards, notes and code</h2>
+
+<div class="grid">
+  <article class="card">
+    <span class="kicker">Option A</span>
+    <h3>Write-through</h3>
+    <p>Every write updates the cache and the database together. Reads are always fresh.</p>
+    <span class="tag">consistent</span>
+  </article>
+  <article class="card">
+    <span class="kicker">Option B</span>
+    <h3>Write-behind</h3>
+    <p>Writes land in the cache first and reach the database later, in batches.</p>
+    <span class="tag">fast writes</span>
+  </article>
+  <article class="card">
+    <span class="kicker">Option C</span>
+    <h3>Read-through</h3>
+    <p>The cache fills itself on a miss. Nothing is cached until someone asks for it.</p>
+    <span class="tag">simple</span>
+  </article>
+</div>
+
+<div class="callout">
+  <span class="kicker">Watch out</span>
+  <p>A callout is for the one passage a reader must not skim past. Use one per page, not one per section.</p>
+</div>
+
+<pre><code>// Code sits on a deeper paper with a gold rule, in the monospace face.
+const order = await orders.reserve(request.items);
+if (!(await payments.charge(order))) await orders.release(order);</code></pre>
+
+<dl class="pairs">
+  <dt>Paper</dt><dd>The page ground, a warm cream; night reading turns it to warm dark brown.</dd>
+  <dt>Ink</dt><dd>Body text, a warm near-black at 13:1 contrast.</dd>
+  <dt>Gold</dt><dd>Rules, borders and marks. Colour is drawn as a stroke, never a large fill.</dd>
+</dl>

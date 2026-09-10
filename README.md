@@ -39,8 +39,8 @@ cd agent-plugins
 ```
 
 Behaviour: `agents/*.md` link into `~/.claude/agents/`, `skills/<name>/` into
-`~/.claude/skills/`, `output-styles/*.md` into `~/.claude/output-styles/`, and `tools/` into
-`~/.claude/tools/<plugin>/`. It is idempotent (an existing link to this repo is skipped), a
+`~/.claude/skills/`, `output-styles/*.md` and any `output-styles/<dir>/` into
+`~/.claude/output-styles/`, and `tools/` into `~/.claude/tools/<plugin>/`. It is idempotent (an existing link to this repo is skipped), a
 conflicting file is backed up to `<name>.bak.<epoch>` first, and a plugin's own `install.sh`
 runs as a post-install hook. `CLAUDE_DIR` overrides the target root (used by `tests/test_install.py`).
 
@@ -98,7 +98,7 @@ the file name is the style name unless the frontmatter sets `name:`.
 
 | Style | From | What it does |
 | --- | --- | --- |
-| `Todd way` | `explaining` | Concise on operational replies; on explanatory ones, terms get defined, claims get grounded, multi-actor flows get drawn as validated HTML, and a long draft goes past a blind reader before delivery. Its scripts arrive via the same plugin's `tools/`. |
+| `Todd way` | `explaining` | Concise on operational replies; on explanatory ones, terms get defined, claims get grounded, multi-actor flows get drawn as validated HTML, and a long draft goes past a blind reader before delivery. Every HTML page wears the Reading design system (book paper, Caslon, full screen width), linked beside the style. Its scripts arrive via the same plugin's `tools/`. |
 
 Select one with `/config` → **Output style**, or set `"outputStyle": "Todd way"` in a settings
 file. It takes effect after `/clear` or in the next session — the system prompt is read once at

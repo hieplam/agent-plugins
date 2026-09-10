@@ -18,6 +18,7 @@ the only shape that catches this class of defect. Two obligations, both earned:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -81,6 +82,40 @@ class InstallsIntoAnEmptyTarget(unittest.TestCase):
                     "references/blind-reader-brief.md"):
             with self.subTest(rel=rel):
                 self.assertTrue((base / rel).is_file(), f"unreachable through the link: {rel}")
+
+    def test_links_the_design_system_beside_the_style(self):
+        """The style sends every HTML page through the Reading design system at a
+        literal path, `~/.claude/output-styles/design-system/`; install.sh is the only
+        thing that creates it."""
+        link = self.target / "output-styles" / "design-system"
+        self.assertTrue(link.is_symlink(), f"not a symlink: {link}")
+        self.assertEqual(link.resolve(),
+                         (REPO_ROOT / "plugins/explaining/output-styles/design-system").resolve())
+
+    def test_every_design_system_path_the_style_names_is_reachable_through_the_link(self):
+        style = (REPO_ROOT / "plugins/explaining/output-styles/todd-way.md").read_text()
+        named = sorted(set(re.findall(r"~/\.claude/output-styles/design-system/([\w.-]+)", style)))
+        self.assertIn("specimen.html", named)
+        for rel in named:
+            with self.subTest(rel=rel):
+                self.assertTrue((self.target / "output-styles" / "design-system" / rel).is_file(),
+                                f"the style names design-system/{rel}, which is not installed")
+
+    def test_the_design_system_carries_no_markdown(self):
+        """Claude Code reads .md files under output-styles/ as styles; one inside the
+        design system could surface as a second, bogus output style."""
+        design = REPO_ROOT / "plugins/explaining/output-styles/design-system"
+        self.assertEqual(sorted(p.name for p in design.rglob("*.md")), [])
+
+    def test_the_fallback_template_wears_the_design_systems_colours(self):
+        """The style's no-tooling fallback restates Reading's colour tokens inline. A
+        retune of reading.css that misses the fallback would leave two looks."""
+        style = (REPO_ROOT / "plugins/explaining/output-styles/todd-way.md").read_text()
+        css = (REPO_ROOT / "plugins/explaining/output-styles/design-system/reading.css").read_text()
+        fallback = style[style.index("**Fallback.**"):style.index("**Mermaid safe syntax.**")]
+        for name, value in re.findall(r"--([a-z-]+):(#[0-9a-f]{6})", fallback):
+            with self.subTest(token=name, value=value):
+                self.assertIn(f"--{name}: {value};", css)
 
     def test_installs_no_skill_because_the_skill_is_archived(self):
         """The explaining rules now ship only as the output style. A `skills/`

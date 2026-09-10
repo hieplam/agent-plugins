@@ -15,6 +15,8 @@
 #   - agents/*.md      -> $CLAUDE_DIR/agents/<file>
 #   - skills/<name>/   -> $CLAUDE_DIR/skills/<name>
 #   - output-styles/*.md -> $CLAUDE_DIR/output-styles/<file>
+#   - output-styles/<dir>/ -> $CLAUDE_DIR/output-styles/<dir>  (assets a style names by a
+#                         literal path, e.g. the explaining plugin's design-system/)
 #   - tools/           -> $CLAUDE_DIR/tools/<plugin>  (runtime tooling an output style,
 #                         CLAUDE.md snippet or hook invokes at a stable installed path —
 #                         an output style is a system-prompt fragment with no relative
@@ -112,6 +114,14 @@ install_plugin() {
     for f in "$dir/output-styles"/*.md; do
       [ -e "$f" ] || continue
       link_one "$f" "$CLAUDE_DIR/output-styles/$(basename "$f")" "style  $(basename "$f")"
+    done
+    # A subdirectory holds assets its style names by a literal path (the style has no
+    # relative path back to the repo). It must carry no .md file, or Claude Code could
+    # read that file as a second output style.
+    for d in "$dir/output-styles"/*/; do
+      [ -d "$d" ] || continue
+      name="$(basename "$d")"
+      link_one "${d%/}" "$CLAUDE_DIR/output-styles/$name" "style  $name/"
     done
   fi
 
