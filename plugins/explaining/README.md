@@ -290,7 +290,7 @@ left-to-right flowchart fills 2406px, labels read at 20–30px, and body text at
 | File | What it carries |
 | --- | --- |
 | `reading.css` | tokens (paper, ink, gold accent; a warm dark "night" set for dark mode or `data-theme="dark"`), the fluid type scale, the full-width page, and every class the specimen shows |
-| `reading.js` | themes mermaid from the colour tokens and sizes each diagram: as wide as its column, at most 2× its natural size, held to 78% of the screen height but never shrunk below natural size |
+| `reading.js` | themes mermaid from the colour tokens and sizes each diagram: never wider than its column, at most 2× its natural size, held to 78% of the screen height — but never so small that its labels drop below body-text size (a diagram that tall scrolls down), and never below 14px labels to fit the width (a diagram that wide scrolls sideways in its frame) |
 | `specimen.html` | a body fragment using every class once — the vocabulary the style tells the model to build from |
 | `fonts/` | Libre Caslon Text (400, 400 italic, 700) and the Alegreya subset that supplies its missing Vietnamese letters, with their OFL licences |
 

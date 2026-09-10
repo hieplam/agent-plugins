@@ -14,13 +14,15 @@ const MAX_SCALE = 2;
 const HEIGHT_SHARE = 0.78;
 
 /** Pure. The factor to scale a diagram of `natural` size by, to sit in `room`.
- * Never wider than the room; never past `maxScale`; shrunk to fit the room's height
- * only down to its natural size — a diagram taller than the screen scrolls rather than
- * shrinking its text below 16px. */
-function fitScale(natural, room, maxScale) {
+ * Fit the room's height, but never past `maxScale`, and never below `textScale` — the
+ * factor that sets the diagram's labels at body-text size, so a diagram taller than the
+ * screen scrolls down rather than shrinking its text. Then shrink to the room's width,
+ * but never below `minScale`: a diagram wider than that scrolls sideways in its frame
+ * instead of shrinking its labels past reading. */
+function fitScale(natural, room, maxScale, textScale, minScale) {
   const byWidth = room.width / natural.width;
   const byHeight = room.height / natural.height;
-  return Math.min(byWidth, maxScale, Math.max(byHeight, 1));
+  return Math.max(minScale, Math.min(byWidth, Math.max(textScale, Math.min(byHeight, maxScale))));
 }
 
 function token(name) {
@@ -86,11 +88,18 @@ function themeVariables() {
   };
 }
 
+// Mermaid lays out label text at this size; scaling by body size / this sets labels at
+// body size.
+const MERMAID_TEXT_PX = 16;
+// The smallest a label may be scaled to, however wide the diagram: 14px.
+const MIN_SCALE = 14 / MERMAID_TEXT_PX;
+
 function fitDiagram(svg) {
   const box = svg.viewBox.baseVal;
   if (!box || !box.width || !box.height) return;
   const room = { width: svg.parentElement.clientWidth, height: window.innerHeight * HEIGHT_SHARE };
-  const scale = fitScale({ width: box.width, height: box.height }, room, MAX_SCALE);
+  const textScale = parseFloat(getComputedStyle(document.body).fontSize) / MERMAID_TEXT_PX;
+  const scale = fitScale({ width: box.width, height: box.height }, room, MAX_SCALE, textScale, MIN_SCALE);
   svg.removeAttribute('width');
   svg.removeAttribute('height');
   svg.style.width = `${Math.floor(box.width * scale)}px`;

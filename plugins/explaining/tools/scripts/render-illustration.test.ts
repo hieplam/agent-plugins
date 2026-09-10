@@ -118,25 +118,36 @@ describe('reading.js — diagram sizing', () => {
   const source = readFileSync(join(DESIGN_SYSTEM_DIR, 'reading.js'), 'utf8');
   const { fitScale, isDarkGround } = new Function(`${source}\nreturn { fitScale, isDarkGround };`)();
 
+  // textScale 1.3625 is the body text at 2560px wide (21.8px) over mermaid's 16px.
+  const TEXT = 21.8 / 16;
+  const MIN = 14 / 16;
+
   test('a wide diagram grows to fill the page width', () => {
     // 1293px natural, 2406px of room, plenty of height: 1.86x, the flowchart measured at 2560.
-    expect(fitScale({ width: 1293, height: 250 }, { width: 2406, height: 1123 }, 2)).toBeCloseTo(1.861, 2);
+    expect(fitScale({ width: 1293, height: 250 }, { width: 2406, height: 1123 }, 2, TEXT, MIN)).toBeCloseTo(1.861, 2);
   });
 
   test('a small diagram stops growing at the cap', () => {
-    expect(fitScale({ width: 400, height: 100 }, { width: 2400, height: 1100 }, 2)).toBe(2);
+    expect(fitScale({ width: 400, height: 100 }, { width: 2400, height: 1100 }, 2, TEXT, MIN)).toBe(2);
   });
 
-  test('a tall diagram is held to the screen height', () => {
-    expect(fitScale({ width: 1161, height: 837 }, { width: 2400, height: 1123 }, 2)).toBeCloseTo(1.342, 2);
+  test('a diagram that fits the screen at readable size is held to the screen height', () => {
+    expect(fitScale({ width: 1161, height: 700 }, { width: 2400, height: 1123 }, 2, TEXT, MIN)).toBeCloseTo(1.604, 2);
   });
 
-  test('the height limit never shrinks a diagram below its natural size', () => {
-    expect(fitScale({ width: 400, height: 2000 }, { width: 2400, height: 1100 }, 2)).toBe(1);
+  test('a tall diagram keeps body-size labels and scrolls, rather than shrinking to fit', () => {
+    // The 1141x2808 flowchart a fresh session drew: held at 1x it left 16px labels and
+    // ~700px of empty paper each side of a 2560px screen.
+    expect(fitScale({ width: 1141, height: 2808 }, { width: 2406, height: 1123 }, 2, TEXT, MIN)).toBeCloseTo(TEXT, 3);
   });
 
-  test('a diagram wider than the room always shrinks to fit it', () => {
-    expect(fitScale({ width: 3000, height: 400 }, { width: 1500, height: 1100 }, 2)).toBe(0.5);
+  test('a diagram a little wider than the room shrinks to fit it', () => {
+    expect(fitScale({ width: 2600, height: 400 }, { width: 2406, height: 1123 }, 2, TEXT, MIN)).toBeCloseTo(0.925, 3);
+  });
+
+  test('a far wider diagram stops shrinking at 14px labels and scrolls sideways', () => {
+    // The same tribe flow laid out left to right: 4600px natural would shrink to 8px labels.
+    expect(fitScale({ width: 4600, height: 780 }, { width: 2406, height: 1123 }, 2, TEXT, MIN)).toBe(MIN);
   });
 
   test('isDarkGround tells the paper from the night paper', () => {

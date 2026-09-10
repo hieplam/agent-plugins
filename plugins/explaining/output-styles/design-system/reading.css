@@ -318,8 +318,8 @@ figcaption {
   margin-top: var(--space-3);
 }
 
-/* reading.js sizes each rendered diagram to this box: as wide as the page allows,
-   no taller than the screen. Until mermaid runs (or if it never loads), the source
+/* reading.js sizes each rendered diagram to this box: as wide as the page allows, no
+   taller than the screen unless that would set its labels below body-text size. Until mermaid runs (or if it never loads), the source
    stays readable as preformatted text. */
 .mermaid {
   display: flex;
@@ -329,5 +329,6 @@ figcaption {
   font-family: var(--font-mono);
   font-size: 0.8rem;
 }
-.mermaid svg { display: block; max-width: none !important; }
+/* flex: none, or the flex box squeezes a wide diagram back into the column. */
+.mermaid svg { display: block; flex: none; max-width: none !important; }
 figure.diagram { padding-top: var(--space-2); }
