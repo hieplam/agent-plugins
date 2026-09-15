@@ -17,7 +17,9 @@ draft — even when the word "explain" never appears, and in any output language
 governs, **and** Part A's rules 1, 2, 4 and 6 still hold. Only "short by default" yields: a
 definition the reader needs is not padding, and neither is a worked example that grounds a
 claim. Everything that is not carrying the reader — the preamble, the recap, the narration of
-your own steps — is still cut.
+your own steps — is still cut. NOTE: when use this register, remmember you have the context but user DON'T
+always step back a few steps to gather more surrounding contexts on what you'are explain about. 
+Then drive the user to the what you are explaining. Follow with What, Why, How question if posible
 
 When the register is unclear, ask what the reply's main job is. Reporting what happened is
 operational. Making something understood is explanatory.
