@@ -90,6 +90,14 @@ The inlined brief is pinned byte-identical to `references/blind-reader-brief.md`
 `test_inlined_blind_reader_brief_is_identical_to_the_shipped_template`, since a drifted copy
 would otherwise fail `check-review-log.ts` far from the edit that caused it.
 
+**Where artifacts live.** Every file B1 and B5 produce goes in its own folder,
+`$ARTIFACTS/<YYYY-MM-DD>-<topic-slug>/`, where `ARTIFACTS` is `$EXPLAINING_ARTIFACTS` or, by
+default, `~/.claude/output-styles/artifacts`. Never `/tmp` — the owner revises these pages
+later — and never the project's working tree. The override exists for the eval fixture, which
+points it at the scratch directory its checks inspect;
+`test_artifacts_have_a_durable_home_with_an_override` pins the style's wording and
+`test_artifacts_land_in_scratch_not_in_the_real_home` pins the fixture's.
+
 `install.sh` links the style into `~/.claude/output-styles/` and the tooling into
 `~/.claude/tools/explaining/`. Select it with `/config` → **Output style**, or set
 `"outputStyle": "Todd way"`; it takes effect after `/clear`, since the system prompt is read

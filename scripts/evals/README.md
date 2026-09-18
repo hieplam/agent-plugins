@@ -19,6 +19,7 @@ with/without comparison) instead of inventing a new one.
   "skill_name": "example-skill",
   "kind": "skill",                    // "skill" (default, omit-able) | "agent" | "output-style"
   "memory_fixture": "memory-fixture/CLAUDE.md", // OPTIONAL, top-level — CLAUDE.md the --arm mem axis writes to scratch/
+  "env": { "EXPLAINING_ARTIFACTS": "{scratch}" }, // OPTIONAL, top-level — extra env for every executor; {scratch} becomes its cwd
   "evals": [
     {
       "id": 1,
@@ -33,11 +34,18 @@ with/without comparison) instead of inventing a new one.
       "checks": [                     // OPTIONAL — machine commands whose exit code decides pass/fail/ungraded before any LLM grader runs
         { "name": "html-mermaid-parses", "command": "bun {skill_dir}/scripts/validate-mermaid.ts --html-glob *.html" }
       ],
-      "artifacts": ["*.html"]         // OPTIONAL — glob patterns preserved from the scratch dir as evidence before it is deleted
+      "artifacts": ["*.html"],        // OPTIONAL — glob patterns preserved from the scratch dir as evidence before it is deleted
+      "env": { "KEY": "value" }       // OPTIONAL — per-case env, overrides the top-level `env` key by key
     }
   ]
 }
 ```
+
+`env` exists for subjects that write to a configurable location outside their cwd. The
+`explaining` style writes its artifacts under `$EXPLAINING_ARTIFACTS` (default
+`~/.claude/output-styles/artifacts`); its fixture sets that to `{scratch}` so a run never
+writes into the real home, and its checks and `artifacts` globs look one folder down
+(`*/*.html`) because each artifact gets its own dated folder.
 
 `kind: "skill"` cases test a `SKILL.md`-based skill (the evals.json lives at
 `<skill-dir>/evals/evals.json`); `kind: "agent"` cases test a plugin's agent

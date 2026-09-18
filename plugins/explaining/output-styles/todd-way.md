@@ -57,6 +57,17 @@ EXPLAINING=$( { ls -d ~/.claude/tools/explaining 2>/dev/null
 An empty `$EXPLAINING` means the plugin is not installed. Both rules below carry a fallback
 that needs nothing from disk; take it, and say in your answer which artifact went unvalidated.
 
+**Where artifacts live.** Every file B1 and B5 produce — the `.mmd` source, the rendered
+`.html`, the `explanation.md` draft, the `.review.jsonl` log — goes in one folder per topic,
+`$ARTIFACTS/<YYYY-MM-DD>-<topic-slug>/`, never under `/tmp` and never in the project's working
+tree. The owner revises these later, and `/tmp` is wiped. To revise an artifact, edit it in
+place there. `EXPLAINING_ARTIFACTS` overrides the root; the eval harness points it at its
+scratch directory.
+
+```bash
+ARTIFACTS="${EXPLAINING_ARTIFACTS:-$HOME/.claude/output-styles/artifacts}"
+```
+
 ### B1 — Illustrate a flow instead of narrating it
 
 **When.** A flow with multiple actors or conditional paths gets a diagram. Linear prose, a
@@ -178,7 +189,7 @@ does.
 to 600 words or more. Shorter answers keep the self-check alone.
 
 **Draft to disk first.** Write the complete draft to a file — the artifact itself, or
-`explanation.md` in the working directory when the deliverable is prose. The review runs on the
+`explanation.md` in the topic's artifact folder when the deliverable is prose. The review runs on the
 file, never on pasted text: the path is the reader's entire input, and that is what keeps the
 reader blind.
 
