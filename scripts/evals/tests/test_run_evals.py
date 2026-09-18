@@ -431,6 +431,56 @@ class RunCaseWritesTheReplyBeforeChecks(unittest.TestCase):
         self.assertIn("sees-reply", result["expectations"][0]["evidence"])
 
 
+class EnvPlanning(unittest.TestCase):
+    def test_no_env_declared_plans_nothing(self):
+        self.assertEqual(run_evals.plan_env(None, {}, Path("/tmp/scr")), {})
+
+    def test_substitutes_scratch_in_a_fixture_level_value(self):
+        self.assertEqual(
+            run_evals.plan_env({"EXPLAINING_ARTIFACTS": "{scratch}"}, {}, Path("/tmp/scr")),
+            {"EXPLAINING_ARTIFACTS": "/tmp/scr"})
+
+    def test_a_case_level_value_overrides_the_fixture_level_one(self):
+        self.assertEqual(
+            run_evals.plan_env({"A": "fixture", "B": "keep"}, {"env": {"A": "{scratch}/x"}},
+                               Path("/tmp/scr")),
+            {"A": "/tmp/scr/x", "B": "keep"})
+
+
+class RunCasePassesTheEnvToTheExecutor(unittest.TestCase):
+    """An env value that points at `{scratch}` is only useful if the executor's
+    `claude -p` actually receives it with the real scratch path substituted."""
+
+    def test_executor_receives_the_planned_env(self):
+        seen = {}
+
+        def fake_run(*args, **kwargs):
+            seen.setdefault("extra_env", kwargs.get("extra_env"))
+            seen.setdefault("cwd", kwargs.get("cwd"))
+            return {"ok": False, "events": [], "error": "stop here", "wall_seconds": 0}
+
+        case = {"id": 1, "name": "env", "prompt": "p", "expected_output": "e"}
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "skill"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text("---\nname: throwaway\n---\nbody\n")
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                run_evals.run_case(
+                    case, "skill", skill_dir, None, "with_skill", timeout=5,
+                    exec_model=None, grader_model=None, out_dir=Path(tmp) / "out",
+                    verbose=False, fixture_env={"EXPLAINING_ARTIFACTS": "{scratch}"})
+        self.assertEqual(seen["extra_env"], {"EXPLAINING_ARTIFACTS": str(seen["cwd"])})
+
+
+class RunClaudeMergesExtraEnv(unittest.TestCase):
+    def test_extra_env_reaches_the_subprocess(self):
+        with mock.patch.object(run_evals.subprocess, "run",
+                               side_effect=FileNotFoundError) as run:
+            run_evals.run_claude("p", cwd=Path("/tmp"), timeout=5,
+                                 extra_env={"EXPLAINING_ARTIFACTS": "/tmp/scr"})
+        self.assertEqual(run.call_args.kwargs["env"]["EXPLAINING_ARTIFACTS"], "/tmp/scr")
+
+
 class ArtifactCollection(unittest.TestCase):
     def test_copies_matching_files_and_ignores_the_rest(self):
         import tempfile
@@ -721,6 +771,44 @@ class ToddWayEvalsFixture(unittest.TestCase):
                 self.assertTrue(Path(target).is_file(),
                                  f"check points at a missing script: {planned['argv']}")
 
+    def test_artifacts_land_in_scratch_not_in_the_real_home(self):
+        """The style writes artifacts under $EXPLAINING_ARTIFACTS, defaulting to
+        ~/.claude/output-styles/artifacts. An eval run must point it at scratch, or
+        every run litters the real home and no check can see what was written."""
+        self.assertEqual(self.data.get("env"), {"EXPLAINING_ARTIFACTS": "{scratch}"})
+
+    def test_artifact_globs_reach_the_per_artifact_folder(self):
+        """Each artifact sits in its own <date>-<slug>/ folder under the root, so a
+        top-level `*.html` glob alone sees nothing."""
+        for case in self.data["evals"]:
+            for check in case.get("checks", []):
+                command = check["command"]
+                for top in ("*.html", "*.review.jsonl"):
+                    if f" {top}" in command or f"--html-glob {top}" in command:
+                        with self.subTest(case=case["id"], check=check["name"], glob=top):
+                            self.assertIn(f"*/{top}", command)
+            for pattern in case.get("artifacts", []):
+                if pattern.startswith("*."):
+                    with self.subTest(case=case["id"], artifact=pattern):
+                        self.assertTrue(any(p.endswith(f"/{pattern}") for p in case["artifacts"]))
+
+    def test_artifact_globs_never_collect_the_harness_own_files(self):
+        """Folder-level globs must not sweep up the hidden reply file or the
+        installed style, which live in dot-directories of the same scratch dir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+            for rel in (".eval/reply.md", ".claude/output-styles/todd-way.md",
+                        "2026-09-18-wal/explanation.md", "2026-09-18-wal/flow.html",
+                        "2026-09-18-wal/explanation.md.review.jsonl"):
+                (scratch / rel).parent.mkdir(parents=True, exist_ok=True)
+                (scratch / rel).write_text("x")
+            patterns = sorted({p for c in self.data["evals"] for p in c.get("artifacts", [])})
+            got = run_evals.collect_artifacts(scratch, patterns, Path(tmp) / "out")
+        self.assertNotIn(".eval/reply.md", got)
+        self.assertNotIn(".claude/output-styles/todd-way.md", got)
+        self.assertIn("2026-09-18-wal/explanation.md", got)
+        self.assertIn("2026-09-18-wal/flow.html", got)
+
     def test_is_the_only_live_explaining_fixture(self):
         """The style replaced the skill rather than joining it, so this fixture is
         the only one the harness runs for these rules. Two live fixtures would split
@@ -808,6 +896,15 @@ class ToddWayStyle(unittest.TestCase):
         for rel in refs:
             with self.subTest(rel=rel):
                 self.assertTrue((tools / rel).is_file(), f"style names a missing path: {rel}")
+
+    def test_artifacts_have_a_durable_home_with_an_override(self):
+        """Owner, 2026-09-18: HTML explanations are worth revising later, and /tmp
+        is wiped. The style names a durable default and one override variable, so
+        an eval run can redirect artifacts into its scratch dir."""
+        self.assertIn('ARTIFACTS="${EXPLAINING_ARTIFACTS:-$HOME/.claude/output-styles/artifacts}"',
+                      self.body)
+        self.assertIn("<YYYY-MM-DD>-<topic-slug>", self.body)
+        self.assertIn("never under `/tmp`", self.body)
 
     def test_script_discovery_never_relies_on_a_shell_glob(self):
         """A non-matching glob aborts the whole command under zsh, so a glob in

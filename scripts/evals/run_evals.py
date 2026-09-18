@@ -213,7 +213,8 @@ def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
                 agents_json: dict | None = None, agent_name: str | None = None,
                 tools: str | None = None, safe_mode: bool = False,
                 isolate_user_scope: bool = False,
-                permission_mode: str | None = None) -> dict:
+                permission_mode: str | None = None,
+                extra_env: dict | None = None) -> dict:
     """Run one isolated `claude -p` process and return its parsed result.
 
     Returns a dict with at least: ok (bool), events (list, may be empty on
@@ -287,6 +288,7 @@ def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
         cmd += ["--setting-sources", "project", "--strict-mcp-config"]
 
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env.update(extra_env or {})
 
     start = time.time()
     try:
@@ -647,6 +649,18 @@ def write_reply(scratch: Path, final_result: str) -> Path:
     return path
 
 
+def plan_env(fixture_env: dict | None, case: dict, scratch: Path) -> dict:
+    """Pure: the extra environment the executor runs with.
+
+    The fixture's top-level `env` applies to every case; a case's own `env`
+    overrides it key by key. `{scratch}` in a value becomes the executor's cwd,
+    so a subject that writes to a configurable location (the explaining style's
+    EXPLAINING_ARTIFACTS) can be pointed at the throwaway dir the checks inspect.
+    """
+    merged = {**(fixture_env or {}), **(case.get("env") or {})}
+    return {k: str(v).replace("{scratch}", str(scratch)) for k, v in merged.items()}
+
+
 def plan_checks(case: dict, skill_dir: Path | None, scratch: Path) -> list:
     """Pure: resolve each declared check into an argv list.
 
@@ -719,7 +733,7 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
              configuration: str, timeout: int, exec_model: str | None,
              grader_model: str | None, out_dir: Path, verbose: bool, run_idx: int = 0,
              permission_mode: str | None = None, arm: str = "clean",
-             memory_fixture: Path | None = None) -> dict:
+             memory_fixture: Path | None = None, fixture_env: dict | None = None) -> dict:
     scratch = Path(tempfile.mkdtemp(prefix="agent-plugins-eval-"))
     try:
         try:
@@ -803,6 +817,7 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
             safe_mode=(configuration == "without_skill"),
             isolate_user_scope=(configuration == "with_skill"),
             permission_mode=permission_mode,
+            extra_env=plan_env(fixture_env, case, scratch),
         )
         if not exec_run["ok"]:
             return {"error": exec_run["error"], "configuration": configuration}
@@ -1209,6 +1224,7 @@ def main() -> int:
             jobs.append({"case": case, "kind": kind, "skill_dir": skill_dir,
                           "agents_dir": agents_dir, "configuration": configuration,
                           "arm": arm, "memory_fixture": memory_fixture,
+                          "fixture_env": data.get("env"),
                           "run_idx": run_idx, "skill_name": skill_name,
                           "out_dir": out_root / skill_name})
 
@@ -1223,7 +1239,7 @@ def main() -> int:
             grader_model=args.grader_model or args.exec_model,
             out_dir=job["out_dir"], verbose=args.verbose, run_idx=job["run_idx"],
             permission_mode=args.permission_mode, arm=job["arm"],
-            memory_fixture=job["memory_fixture"],
+            memory_fixture=job["memory_fixture"], fixture_env=job["fixture_env"],
         )
         return job, result
 
