@@ -91,14 +91,15 @@ The inlined brief is pinned byte-identical to `references/blind-reader-brief.md`
 would otherwise fail `check-review-log.ts` far from the edit that caused it.
 
 **Where artifacts live.** Every file B1 and B5 produce goes in its own folder,
-`$ARTIFACTS/<YYYY-MM-DD>-<topic-slug>-<session-id>/`, where `ARTIFACTS` is
+`$ARTIFACTS/<session-id>/`, where `ARTIFACTS` is
 `$EXPLAINING_ARTIFACTS` or, by default, `~/.claude/output-styles/artifacts`, and the session id
 is `$CLAUDE_CODE_SESSION_ID` (the name of the session's transcript, `<session-id>.jsonl`), so a
-folder traces back to the conversation that wrote it. Never `/tmp` — the owner revises these
+folder traces back to the conversation that wrote it. The date and topic live in that
+transcript, so the folder name does not repeat them. Never `/tmp` — the owner revises these
 pages later — and never the project's working tree. The override exists for the eval fixture, which
 points it at the scratch directory its checks inspect;
 `test_artifacts_have_a_durable_home_with_an_override` and
-`test_artifact_folder_carries_the_session_id_to_trace_it_back` pin the style's wording and
+`test_artifact_folder_is_named_by_session_id_to_trace_it_back` pin the style's wording and
 `test_artifacts_land_in_scratch_not_in_the_real_home` pins the fixture's.
 
 `install.sh` links the style into `~/.claude/output-styles/` and the tooling into

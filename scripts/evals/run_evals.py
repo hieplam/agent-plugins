@@ -716,6 +716,10 @@ def collect_artifacts(scratch: Path, patterns: list, dest: Path) -> list:
             if not src.is_file():
                 continue
             rel = src.relative_to(scratch)
+            # pathlib's `*` matches dot-directories, and the harness keeps its own
+            # files in .eval/ and .claude/ — never evidence, whatever the pattern.
+            if any(part.startswith(".") for part in rel.parts):
+                continue
             target = (dest / rel).resolve()
             # `rel` is lexical (no resolution), so a pattern containing ".."
             # (fixture-authoring typo, e.g. "../*.html") yields a target OUTSIDE
