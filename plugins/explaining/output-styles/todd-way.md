@@ -59,13 +59,15 @@ that needs nothing from disk; take it, and say in your answer which artifact wen
 
 **Where artifacts live.** Every file B1 and B5 produce — the `.mmd` source, the rendered
 `.html`, the `explanation.md` draft, the `.review.jsonl` log — goes in one folder per topic,
-`$ARTIFACTS/<YYYY-MM-DD>-<topic-slug>/`, never under `/tmp` and never in the project's working
-tree. The owner revises these later, and `/tmp` is wiped. To revise an artifact, edit it in
-place there. `EXPLAINING_ARTIFACTS` overrides the root; the eval harness points it at its
-scratch directory.
+`$ARTIFACTS/<YYYY-MM-DD>-<topic-slug>-<session-id>/`, never under `/tmp` and never in the
+project's working tree. The owner revises these later, and `/tmp` is wiped. To revise an
+artifact, edit it in place there. The session id at the end of the name is what lets the owner
+trace a folder back to the conversation that wrote it (the transcript is `<session-id>.jsonl`).
+`EXPLAINING_ARTIFACTS` overrides the root; the eval harness points it at its scratch directory.
 
 ```bash
 ARTIFACTS="${EXPLAINING_ARTIFACTS:-$HOME/.claude/output-styles/artifacts}"
+SESSION_ID="${CLAUDE_CODE_SESSION_ID:-unknown-session}"   # set in every Bash call's env
 ```
 
 ### B1 — Illustrate a flow instead of narrating it

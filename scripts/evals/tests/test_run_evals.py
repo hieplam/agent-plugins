@@ -903,8 +903,14 @@ class ToddWayStyle(unittest.TestCase):
         an eval run can redirect artifacts into its scratch dir."""
         self.assertIn('ARTIFACTS="${EXPLAINING_ARTIFACTS:-$HOME/.claude/output-styles/artifacts}"',
                       self.body)
-        self.assertIn("<YYYY-MM-DD>-<topic-slug>", self.body)
         self.assertIn("never under `/tmp`", self.body)
+
+    def test_artifact_folder_carries_the_session_id_to_trace_it_back(self):
+        """Owner, 2026-09-19: a folder named only <date>-<slug> cannot be traced to
+        the session that wrote it. The folder name ends with the session id, read
+        from the shell env the harness sets (it matches the transcript's file name)."""
+        self.assertIn("<YYYY-MM-DD>-<topic-slug>-<session-id>", self.body)
+        self.assertIn('SESSION_ID="${CLAUDE_CODE_SESSION_ID:-unknown-session}"', self.body)
 
     def test_script_discovery_never_relies_on_a_shell_glob(self):
         """A non-matching glob aborts the whole command under zsh, so a glob in
