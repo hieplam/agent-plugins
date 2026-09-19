@@ -45,7 +45,7 @@ with/without comparison) instead of inventing a new one.
 `explaining` style writes its artifacts under `$EXPLAINING_ARTIFACTS` (default
 `~/.claude/output-styles/artifacts`); its fixture sets that to `{scratch}` so a run never
 writes into the real home, and its checks and `artifacts` globs look one folder down
-(`*/*.html`) because each artifact gets its own dated folder.
+(`*/*.html`) because each session's artifacts get their own `<session-id>/` folder.
 
 `kind: "skill"` cases test a `SKILL.md`-based skill (the evals.json lives at
 `<skill-dir>/evals/evals.json`); `kind: "agent"` cases test a plugin's agent
@@ -63,8 +63,9 @@ A check has three placeholders: `{skill_dir}` (above), `{scratch}` (the executor
 the checks run. Without it a check can only judge the files the executor chose to leave
 behind, never the text the user actually reads; with it a check can gate term discipline, a
 required closing line, or an opening preamble deterministically before the LLM grader gets a
-say. The dot-directory keeps it invisible to `artifacts` globs and to absence checks such as
-`! ls *.md`. Each placeholder is substituted as one shell-quoted argv token, so use it as a
+say. The dot-directory keeps it invisible to absence checks such as
+`! ls *.md`, and `collect_artifacts` never copies out of a dot-directory, whatever the glob
+matches. Each placeholder is substituted as one shell-quoted argv token, so use it as a
 direct argument (`--reply {reply}`), not inside a nested `sh -c '…'` string, when the path
 might carry a space.
 

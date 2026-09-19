@@ -63,7 +63,7 @@
       "name": "multi-actor-flow-illustrated",
       "style": "todd-way",
       "prompt": "Read tribe-README.md in this directory. Explain, for a developer who has never seen this system, how work actually moves through the tribe end to end: who hands work to whom, what each role returns to its caller, which paths are conditional, and where the boundary between the two reviewer roles falls. Make the whole flow understandable.",
-      "expected_output": "The response makes the multi-actor flow understandable AND leaves behind a rendered illustration the reader can open: a self-contained .html file written into a dated artifact folder (under the working directory, where the harness points EXPLAINING_ARTIFACTS) whose mermaid source sits in an element with class=\"mermaid\" and parses. The diagram covers the dispatch chain across the roles and at least one conditional path. The accompanying prose obeys the style's other rules — every role name and piece of jargon is defined or contextualized at first use, the explanation of who hands work to whom and what each role returns is specific rather than hand-wavy, and it leads with the answer instead of a preamble. Producing only a fenced code block, or only prose with no file on disk, does not satisfy this.",
+      "expected_output": "The response makes the multi-actor flow understandable AND leaves behind a rendered illustration the reader can open: a self-contained .html file written into a per-session artifact folder (under the working directory, where the harness points EXPLAINING_ARTIFACTS) whose mermaid source sits in an element with class=\"mermaid\" and parses. The diagram covers the dispatch chain across the roles and at least one conditional path. The accompanying prose obeys the style's other rules — every role name and piece of jargon is defined or contextualized at first use, the explanation of who hands work to whom and what each role returns is specific rather than hand-wavy, and it leads with the answer instead of a preamble. Producing only a fenced code block, or only prose with no file on disk, does not satisfy this.",
       "files": [
         {
           "path": "tribe-README.md",
@@ -100,7 +100,7 @@
       ],
       "artifacts": [
         "*.md",
-        "[0-9]*/*.md",
+        "*/*.md",
         "*.review.jsonl",
         "*/*.review.jsonl",
         "*.html",
@@ -155,7 +155,7 @@
       ],
       "artifacts": [
         "*.md",
-        "[0-9]*/*.md"
+        "*/*.md"
       ]
     },
     {
@@ -215,7 +215,7 @@
         "*.html",
         "*/*.html",
         "*.md",
-        "[0-9]*/*.md",
+        "*/*.md",
         "*.review.jsonl",
         "*/*.review.jsonl"
       ]

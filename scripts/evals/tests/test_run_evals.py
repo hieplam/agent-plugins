@@ -778,8 +778,8 @@ class ToddWayEvalsFixture(unittest.TestCase):
         self.assertEqual(self.data.get("env"), {"EXPLAINING_ARTIFACTS": "{scratch}"})
 
     def test_artifact_globs_reach_the_per_artifact_folder(self):
-        """Each artifact sits in its own <date>-<slug>/ folder under the root, so a
-        top-level `*.html` glob alone sees nothing."""
+        """Each session's artifacts sit in its own <session-id>/ folder under the root,
+        so a top-level `*.html` glob alone sees nothing."""
         for case in self.data["evals"]:
             for check in case.get("checks", []):
                 command = check["command"]
@@ -798,16 +798,16 @@ class ToddWayEvalsFixture(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             scratch = Path(tmp) / "scratch"
             for rel in (".eval/reply.md", ".claude/output-styles/todd-way.md",
-                        "2026-09-18-wal/explanation.md", "2026-09-18-wal/flow.html",
-                        "2026-09-18-wal/explanation.md.review.jsonl"):
+                        "a3f9c1d2-wal/explanation.md", "a3f9c1d2-wal/flow.html",
+                        "a3f9c1d2-wal/explanation.md.review.jsonl"):
                 (scratch / rel).parent.mkdir(parents=True, exist_ok=True)
                 (scratch / rel).write_text("x")
             patterns = sorted({p for c in self.data["evals"] for p in c.get("artifacts", [])})
             got = run_evals.collect_artifacts(scratch, patterns, Path(tmp) / "out")
         self.assertNotIn(".eval/reply.md", got)
         self.assertNotIn(".claude/output-styles/todd-way.md", got)
-        self.assertIn("2026-09-18-wal/explanation.md", got)
-        self.assertIn("2026-09-18-wal/flow.html", got)
+        self.assertIn("a3f9c1d2-wal/explanation.md", got)
+        self.assertIn("a3f9c1d2-wal/flow.html", got)
 
     def test_is_the_only_live_explaining_fixture(self):
         """The style replaced the skill rather than joining it, so this fixture is
@@ -903,8 +903,16 @@ class ToddWayStyle(unittest.TestCase):
         an eval run can redirect artifacts into its scratch dir."""
         self.assertIn('ARTIFACTS="${EXPLAINING_ARTIFACTS:-$HOME/.claude/output-styles/artifacts}"',
                       self.body)
-        self.assertIn("<YYYY-MM-DD>-<topic-slug>", self.body)
         self.assertIn("never under `/tmp`", self.body)
+
+    def test_artifact_folder_is_named_by_session_id_to_trace_it_back(self):
+        """Owner, 2026-09-19: the folder needs only the session id. The date and the
+        topic are already in that session's transcript, and nobody browses these
+        folders by name, so a longer name buys nothing."""
+        self.assertIn("$ARTIFACTS/<session-id>/", self.body)
+        self.assertIn('SESSION_ID="${CLAUDE_CODE_SESSION_ID:-unknown-session}"', self.body)
+        self.assertNotIn("<YYYY-MM-DD>", self.body)
+        self.assertNotIn("<topic-slug>", self.body)
 
     def test_script_discovery_never_relies_on_a_shell_glob(self):
         """A non-matching glob aborts the whole command under zsh, so a glob in
