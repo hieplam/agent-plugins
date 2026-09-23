@@ -203,16 +203,33 @@ in full; the file on disk is the copy the review ran on, and pointing at it ("wr
 user asked for a file or the content cannot live in a message (a rendered diagram).
 
 **Dispatch one blind reader per round.** A fresh subagent — never a fork of this session, never
-this session itself — on `sonnet` by default, with `run_in_background: false`, and wait for its
-reply: a backgrounded reader never returns a verdict in a headless session. Its entire brief is
-the template below with its three slots filled in — the file path, the audience in one short
-phrase, and the language. Read the template from
-`$EXPLAINING/references/blind-reader-brief.md` (the region between its `BRIEF-START` and
-`BRIEF-END` markers) when `$EXPLAINING` is set; the copy inlined here is identical and is the
-fallback when it is not. Nothing else crosses into that brief: not the user's request, not your
-sources, not your reasoning, not the draft text inline, not an earlier round's findings. A
-reader that has been told what the draft was supposed to say can no longer tell you what it
-actually says.
+this session itself — with `run_in_background: false`, and wait for its reply: a backgrounded
+reader never returns a verdict in a headless session. Its entire brief is the template below
+with its three slots filled in — the file path, the audience in one short phrase, and the
+language. Read the template from `$EXPLAINING/references/blind-reader-brief.md` (the region
+between its `BRIEF-START` and `BRIEF-END` markers) when `$EXPLAINING` is set; the copy inlined
+here is identical and is the fallback when it is not. Nothing else crosses into that brief: not
+the user's request, not your sources, not your reasoning, not the draft text inline, not an
+earlier round's findings. A reader that has been told what the draft was supposed to say can no
+longer tell you what it actually says.
+
+**Pick the reader's model by the artifact, not a fixed default.** The oracle is the draft on
+disk at dispatch time, read fresh for this decision:
+
+- `haiku` when ALL hold: under ~800 words (or the diagram/table equivalent — a handful of
+  nodes or rows), plain prose or a single simple diagram with no embedded code block, one
+  concept or flow, and this is round 1.
+- `sonnet` when ANY hold: 800 words or more; the draft embeds code, multiple diagrams, or
+  spans more than one technical domain; the audience is itself technical/expert (a nuanced
+  judgment call about what needs no explanation); or this is round 2 or round 3 — a prior
+  round already found a real BLOCK, so the harder reader confirms the fix actually landed
+  rather than re-running the cheap pass that missed it once already.
+
+When a round sits on the boundary, round up to `sonnet` — a cheap reader that misses a real
+BLOCK defeats B5's whole purpose, while an expensive reader on a simple draft only costs
+tokens. Record the model actually dispatched in the round's `reader_model` field; if the
+dispatch tool cannot take a model override, dispatch with the session default and record that
+model instead of the one this rule picked.
 
 ```
 Read the file at {{artifact_path}}. It was written for {{audience}}, in {{language}}.
@@ -242,8 +259,9 @@ found zero BLOCK findings, or READER: FAIL n BLOCK when you found n of them.
 draft with `.review.jsonl` appended (a draft at `explanation.md` logs to
 `explanation.md.review.jsonl`). Each round is two writes, in this order:
 
-1. **Open** — before dispatching the reader, append one JSON object carrying `round` and
-   `brief` (the rendered brief, verbatim).
+1. **Open** — before dispatching the reader, append one JSON object carrying `round`,
+   `reader_model` (the model this round's dispatch decision picked), and `brief` (the rendered
+   brief, verbatim).
 2. **Complete** — when the reader returns, rewrite that same line with `findings`,
    `block_count`, `verdict` and `author_action` filled in.
 

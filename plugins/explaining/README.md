@@ -329,8 +329,10 @@ Rule 5's brief is rendered from `tools/references/blind-reader-brief.md`, a sibl
 style still names it `$EXPLAINING/references/...`. Its three slots
 — `artifact_path`, `audience`, `language` — are the only values allowed to reach the blind
 reader; nothing else (the user's request, the author's reasoning, an earlier round's
-findings) may cross into the rendered text. The reader model is a documented knob that
-defaults to `sonnet`.
+findings) may cross into the rendered text. The reader model is a documented knob picked per
+round by the draft's complexity — `haiku` for a short, single-concept, code-free round 1;
+`sonnet` for anything longer, code- or diagram-heavy, multi-domain, technical-audience, or a
+round 2/3 retry — recorded in the log's `reader_model` field.
 
 ## On-demand dependency install
 
