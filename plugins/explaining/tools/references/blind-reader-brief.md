@@ -37,9 +37,11 @@ found zero BLOCK findings, or READER: FAIL n BLOCK when you found n of them.
   your reasoning, not the draft text pasted inline, and not any earlier round's findings. A
   reader that has been told what the draft was supposed to say can no longer tell you what it
   actually says.
-- Reader model: `sonnet` by default, the same tier the tribe's reviewer agent uses. This is the
-  knob to turn when a draft is unusually long or unusually cheap to read. If the dispatch tool
-  in this session does not accept a model override, dispatch with the session default and record
+- Reader model: pick it by the draft's complexity, not a fixed default — see "Pick the reader's
+  model by the artifact" in the output style. Short, single-concept, code-free prose on round 1
+  gets `haiku`; anything longer, code- or diagram-heavy, multi-domain, technical-audience, or a
+  round 2/3 retry gets `sonnet`. On the boundary, round up to `sonnet`. If the dispatch tool in
+  this session does not accept a model override, dispatch with the session default and record
   the model actually used in the review log.
 - Dispatch a fresh subagent every round. Never a fork of the current session, and never the
   current session itself: the whole value is a context that has never seen the draft before.
