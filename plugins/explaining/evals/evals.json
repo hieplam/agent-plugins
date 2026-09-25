@@ -233,6 +233,38 @@
           "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'TaskAwaiter,UnsafeOnCompleted,sync-over-async,thread pool starvation,ConfigureAwaitOptions,IAsyncStateMachine,ICriticalNotifyCompletion'"
         }
       ]
+    },
+    {
+      "id": 13,
+      "name": "reask-gets-html",
+      "style": "todd-way",
+      "prompt": "Explain what determines a Bloom filter's false-positive rate.",
+      "turns": ["I still don't get it. Can you explain it again?"],
+      "expected_output": "The reader has already gotten a first explanation and said it still isn't landing. The final reply does NOT repeat the same explanation as another wall of text: it stays short, in plain words, and names the path of an HTML page it just built for this second ask. The page itself — read from the artifact text appended above, which is what the final turn actually wrote — genuinely helps the reader see the false-positive-rate idea in a way prose alone had already failed to land: it is not the same explanation pasted into an HTML wrapper, and it is not a stub with only a few words on an otherwise near-empty page. What the page actually contains — its structure, its shape — is entirely the model's own choice; this rubric names no particular form it must take. A reply that just writes more prose with no HTML page at all, or an HTML page that only repeats the earlier wording with no real content of its own, fails this case.",
+      "checks": [
+        {
+          "name": "second-ask-gets-a-real-themed-page",
+          "command": "bun {skill_dir}/tools/scripts/check-reply-html.ts --reply {reply} --manifest {final_turn_manifest} --expect present --themed"
+        }
+      ],
+      "artifacts": [
+        "*.html",
+        "*/*.html"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "non-confused-follow-up-stays-prose",
+      "style": "todd-way",
+      "prompt": "Explain what determines a Bloom filter's false-positive rate.",
+      "turns": ["Thanks, that's clear. Which hash functions do common implementations use?"],
+      "expected_output": "This follow-up is a genuinely new, narrow question, not a sign the first explanation didn't land — the reader said it was already clear. The reply answers it directly, in short plain prose, naming common hash functions (e.g. MurmurHash, FNV, xxHash) without building or pointing at any new HTML page. A reply that produces or points at an HTML page here — as if every second turn needs one, regardless of what it actually asked — fails this case, and so does a reply padded with an unrelated illustration.",
+      "checks": [
+        {
+          "name": "narrow-follow-up-stays-prose",
+          "command": "bun {skill_dir}/tools/scripts/check-reply-html.ts --reply {reply} --manifest {final_turn_manifest} --expect absent"
+        }
+      ]
     }
   ]
 }

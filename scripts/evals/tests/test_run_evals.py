@@ -725,7 +725,11 @@ class ToddWayEvalsFixture(unittest.TestCase):
         for every case whose job is understanding."""
         operational = {"operational-register-stays-terse",
                        "doc-comment-names-the-behaviour-not-a-label",
-                       "multi-actor-flow-illustrated"}
+                       "multi-actor-flow-illustrated",
+                       # B6 re-ask cases (plan-b6-reask-html.md T2): these test whether
+                       # a re-ask gets an HTML page or stays prose, not term discipline.
+                       "reask-gets-html",
+                       "non-confused-follow-up-stays-prose"}
         for case in self.data["evals"]:
             if case["name"] in operational:
                 continue

@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  DESIGN_SYSTEM_DIR, MERMAID_CDN_URL, embedFonts, escapeHtml, fontRefs, loadTheme, main,
-  renderIllustrationHtml, renderPage,
+  DESIGN_SYSTEM_DIR, GENERATOR_META_TAG, MERMAID_CDN_URL, embedFonts, escapeHtml, fontRefs,
+  loadTheme, main, renderIllustrationHtml, renderPage,
 } from './render-illustration';
 import { extractMermaidSources } from './validate-mermaid';
 
@@ -72,6 +72,15 @@ describe('renderIllustrationHtml', () => {
 
 describe('renderPage', () => {
   const theme = { css: '.page {}', script: 'async function renderDiagrams() {}' };
+
+  // A2 (check-reply-html.ts): a page produced by this renderer must be provably
+  // distinguishable from one a check hand-wrote to look similar. Every page carries
+  // this literal marker in its <head>, and check-reply-html.ts's --themed flag reads
+  // it back to prove a page named in a reply actually came from this renderer.
+  test('carries a generator marker proving the page came from this renderer (A2)', () => {
+    const html = renderPage({ title: 't', lede: '', body: '<p>x</p>' }, theme);
+    expect(html).toContain(GENERATOR_META_TAG);
+  });
 
   test('places the body verbatim after the header, and escapes only the title and lede', () => {
     const html = renderPage({ title: 'A & B', lede: '<i>', body: '<div class="grid">x</div>' }, theme);

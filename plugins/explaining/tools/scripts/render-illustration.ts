@@ -38,6 +38,12 @@ export type Theme = { css: string; script: string };
 
 export const MERMAID_CDN_URL = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
+/** The literal marker every page this renderer writes carries in its `<head>`, so a
+ * downstream check (check-reply-html.ts's `--themed`, A2) can prove a page named in a
+ * reply actually came from render-illustration.ts, rather than being hand-written or
+ * copied to merely look similar. */
+export const GENERATOR_META_TAG = '<meta name="generator" content="explaining/render-illustration">';
+
 /** A font the stylesheet bundles: `url('fonts/<name>.woff2')`. The name pattern admits no
  * `/` or `..`, so a reference can never reach outside the design system's fonts/ dir. */
 const FONT_REF = /url\('fonts\/([A-Za-z0-9_.-]+\.woff2)'\)/g;
@@ -72,6 +78,7 @@ export function renderPage({ title, lede, body }: Page, theme: Theme): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${GENERATOR_META_TAG}
 <title>${safeTitle}</title>
 <style>
 ${theme.css.trim()}
