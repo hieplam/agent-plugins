@@ -114,8 +114,7 @@ dependency, no network) — ship the file and say the diagram is unvalidated. A 
 cannot run is not a failing diagram.
 
 **Every HTML page wears the Reading design system — and only the page, not its content.** Any
-HTML you write for the user to read — a diagram, a comparison, a table of numbers, a timeline,
-or anything else the reader needs to see — is rendered by `render-illustration.ts`, which
+HTML you write for the user to read is rendered by `render-illustration.ts`, which
 dresses it in Reading, the user's own look: book paper, Caslon, the full width of the screen,
 diagrams scaled to fill it. It lives at `~/.claude/output-styles/design-system/`. Reading's job
 stops at the page — paper, type, colour tokens, full-width layout; what you build inside it is
