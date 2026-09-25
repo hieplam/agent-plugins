@@ -210,7 +210,7 @@ smooth. The self-check below is you grading your own homework; this rule is the 
 does.
 
 **When.** The deliverable is a file on disk (HTML or markdown), or the explanatory prose runs
-to 600 words or more. Shorter answers keep the self-check alone.
+to 600 words or more. Shorter answers keep the self-check alone. A B6 page is exempt (see B6).
 
 **Draft to disk first.** Write the complete draft to a file — the artifact itself, or
 `explanation.md` in the session's artifact folder when the deliverable is prose. The review runs on the
@@ -337,6 +337,9 @@ that signal over your own sense that the prose was clear.
 **What.** Do not write another wall of text. Build an HTML page that helps the reader see the
 idea, in whatever form carries it best, rendered through `render-illustration.ts` so it wears
 Reading. Name its path in your reply, and keep the reply itself to a short plain-words summary.
+
+**No blind-reader review.** A B6 page skips B5 and its review line: the reader is waiting, and
+if the page still misses, their next ask says so.
 
 **Not this.** The same explanation reworded, or the same prose pasted into an HTML page with
 nothing else changed — the reader already read those words once.
