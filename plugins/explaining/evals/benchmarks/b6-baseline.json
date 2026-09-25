@@ -1,0 +1,77 @@
+{
+ "label": "b6-baseline",
+ "style": "todd-way.md @ eedf42d (unchanged)",
+ "exec_model": "(default: Opus 5.5)",
+ "cases": {
+  "13": {
+   "name": "reask-gets-html",
+   "passed": 0,
+   "runs": 3
+  },
+  "14": {
+   "name": "non-confused-follow-up-stays-prose",
+   "passed": 3,
+   "runs": 3
+  },
+  "1": {
+   "name": "operational-register-stays-terse",
+   "passed": 1,
+   "runs": 1
+  },
+  "2": {
+   "name": "explanatory-register-terms-introduced-and-claims-grounded",
+   "passed": 1,
+   "runs": 1
+  },
+  "3": {
+   "name": "seam-explanatory-depth-without-losing-concision",
+   "passed": 0,
+   "runs": 1
+  },
+  "5": {
+   "name": "long-explanation-gets-a-blind-reader-review",
+   "passed": 1,
+   "runs": 1
+  },
+  "6": {
+   "name": "first-sentence-leads-with-the-answer-without-bare-jargon",
+   "passed": 0,
+   "runs": 1
+  },
+  "7": {
+   "name": "error-message-question-is-explanatory-in-disguise",
+   "passed": 0,
+   "runs": 1
+  },
+  "8": {
+   "name": "pr-description-introduces-its-own-terms",
+   "passed": 0,
+   "runs": 1
+  },
+  "9": {
+   "name": "doc-comment-names-the-behaviour-not-a-label",
+   "passed": 1,
+   "runs": 1
+  },
+  "10": {
+   "name": "non-english-reply-introduces-borrowed-english-terms",
+   "passed": 1,
+   "runs": 1
+  },
+  "11": {
+   "name": "acronym-heavy-domain-expands-every-acronym",
+   "passed": 1,
+   "runs": 1
+  },
+  "12": {
+   "name": "senior-audience-no-padding-but-new-terms-still-introduced",
+   "passed": 0,
+   "runs": 1
+  },
+  "4": {
+   "name": "multi-actor-flow-illustrated",
+   "passed": 1,
+   "runs": 1
+  }
+ }
+}
