@@ -17,12 +17,12 @@ The repo is public, so no clone and no auth are needed:
 
 ```
 /plugin marketplace add hieplam/agent-plugins
-/plugin install splitting-plans@agent-plugins
+/plugin install explaining@agent-plugins
 ```
 
-Run those inside a Claude Code session. `splitting-plans@agent-plugins` is
-`<plugin>@<marketplace>` — the marketplace is named `agent-plugins`, and any plugin from the
-table below works in its place.
+Run those inside a Claude Code session. `explaining@agent-plugins` is
+`<plugin>@<marketplace>` — the marketplace is named `agent-plugins`. Only `explaining` is
+registered there; the archived plugins are symlink-install only (see below).
 
 ### From a checkout (symlink install)
 
@@ -34,8 +34,9 @@ refresh.
 git clone https://github.com/hieplam/agent-plugins.git
 cd agent-plugins
 ./install.sh --list          # show available plugins and their components
-./install.sh splitting-plans # install named plugins
-./install.sh                 # install all of them
+./install.sh explaining      # install named plugins
+./install.sh                 # install all live plugins (never the archived ones)
+./install.sh _archive/splitting-plans   # opt in to an archived plugin
 ```
 
 Behaviour: `agents/*.md` link into `~/.claude/agents/`, `skills/<name>/` into
@@ -55,13 +56,25 @@ them.
 
 | Plugin | Kind | What it does |
 | --- | --- | --- |
-| `research-to-blog` | agents | Turn a session insight or a bare topic into a bilingual EN+VI research note and published blog posts. |
-| `splitting-plans` | skills | Split a large plan into isolated, dependency-aware sub-plans for parallel subagents. |
-| `check-diff-coverage` | skills | Measure uncovered diff vs main and drive a remediation loop (.NET, Go). |
-| `refactor-for-testability` | skills | Reshape untestable code before changing its behaviour. |
-| `workflow-journal` | skills | Render each Workflow run to a readable Markdown record. |
-| `simple-image-video` | skills | Animate a still image into a short video. |
 | `explaining` | output style, tools | The **Todd way** output style: eval-proven rules for explanatory prose (term discipline, grounding, drawn flows, blind-reader review) folded together with the built-in Concise rules, always on. The skill it replaced is frozen under `archive/skills/explaining/`. |
+
+### Archived plugins
+
+Everything else lives in `_archive/<name>/` with the same layout it had under `plugins/`. They
+are not in the marketplace and not part of `./install.sh` with no arguments, but each one still
+installs on request by its `_archive/` name:
+
+| Install with | What it does |
+| --- | --- |
+| `./install.sh _archive/research-to-blog` | Turn a session insight or a bare topic into a bilingual EN+VI research note and published blog posts. |
+| `./install.sh _archive/splitting-plans` | Split a large plan into isolated, dependency-aware sub-plans for parallel subagents. |
+| `./install.sh _archive/check-diff-coverage` | Measure uncovered diff vs main and drive a remediation loop (.NET, Go). |
+| `./install.sh _archive/refactor-for-testability` | Reshape untestable code before changing its behaviour. |
+| `./install.sh _archive/workflow-journal` | Render each Workflow run to a readable Markdown record. |
+| `./install.sh _archive/simple-image-video` | Animate a still image into a short video. |
+
+`./install.sh --list` shows both groups. Their eval fixtures are outside `plugins/`, so
+`run_evals.py --all` skips them; run one explicitly with `--evals _archive/<name>/...`.
 
 ## Development
 
@@ -76,7 +89,7 @@ python3 -m unittest discover -s tests -t .
 cd plugins/explaining/tools/scripts && bun install && bun test && cd -
 
 # agent/skill evals (spends real tokens — see scripts/evals/README.md)
-python3 scripts/evals/run_evals.py --evals plugins/splitting-plans/skills/splitting-plans/evals/evals.json
+python3 scripts/evals/run_evals.py --evals _archive/splitting-plans/skills/splitting-plans/evals/evals.json
 ```
 
 Every plugin in `plugins/` must be registered in `.claude-plugin/marketplace.json`, and must
@@ -84,9 +97,9 @@ follow the directory contract `install.sh` understands: `agents/`, `skills/`, `o
 `tools/`, `claude-md/`, `hooks/`, `.claude-plugin/`, `scripts/`, and `evals/` — it warns on
 anything else, and `tests/test_install.py` fails if any plugin trips that warning.
 
-`archive/` sits outside `plugins/` on purpose: the installer cannot reach it and the eval
-harness's `--all` discovery cannot pick up its fixtures. That is where a retired component
-goes when its evidence is still worth keeping.
+`archive/` (retired components kept for their evidence) and `_archive/` (retired plugins that
+can still be installed by name) both sit outside `plugins/` on purpose: "install ALL" and the
+eval harness's `--all` discovery never see them.
 
 ## Output styles
 

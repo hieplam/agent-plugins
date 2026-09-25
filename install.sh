@@ -8,8 +8,9 @@
 #
 # Usage:
 #   ./install.sh                 install ALL plugins
-#   ./install.sh explaining workflow-journal   install only the named plugins
-#   ./install.sh --list          show available plugins and their components
+#   ./install.sh explaining      install only the named plugins
+#   ./install.sh _archive/splitting-plans      install an archived plugin (not part of "install ALL")
+#   ./install.sh --list          show available plugins (and archived ones) and their components
 #
 # Behavior:
 #   - agents/*.md      -> $CLAUDE_DIR/agents/<file>
@@ -37,6 +38,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PLUGINS_DIR="$REPO_ROOT/plugins"
+# Retired plugins live in _archive/<name>/ with the same layout as plugins/<name>/.
+# They are opt-in: "install ALL" walks only plugins/, and an archived plugin is named
+# with its _archive/ prefix.
+ARCHIVE_DIR="$REPO_ROOT/_archive"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
 installed=0 skipped=0 backedup=0 warned=0
@@ -44,18 +49,30 @@ installed=0 skipped=0 backedup=0 warned=0
 say()  { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; warned=$((warned + 1)); }
 
+describe_plugin() {
+  local p="$1" name="$2"
+  local parts=()
+  [ -d "$p/agents" ] && parts+=("agents: $(find "$p/agents" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
+  [ -d "$p/skills" ] && parts+=("skills: $(find "$p/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')")
+  [ -d "$p/output-styles" ] && parts+=("output-styles: $(find "$p/output-styles" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
+  [ -d "$p/tools" ] && parts+=("tools")
+  say "  - $name (${parts[*]:-empty})"
+}
+
 list_plugins() {
   say "Available plugins in $PLUGINS_DIR:"
-  local p name
+  local p
   for p in "$PLUGINS_DIR"/*/; do
-    name="$(basename "$p")"
-    local parts=()
-    [ -d "$p/agents" ] && parts+=("agents: $(find "$p/agents" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
-    [ -d "$p/skills" ] && parts+=("skills: $(find "$p/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')")
-    [ -d "$p/output-styles" ] && parts+=("output-styles: $(find "$p/output-styles" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')")
-    [ -d "$p/tools" ] && parts+=("tools")
-    say "  - $name (${parts[*]:-empty})"
+    describe_plugin "${p%/}" "$(basename "$p")"
   done
+  if [ -d "$ARCHIVE_DIR" ]; then
+    say ""
+    say "Archived plugins in $ARCHIVE_DIR (install with ./install.sh _archive/<name>):"
+    for p in "$ARCHIVE_DIR"/*/; do
+      [ -d "$p" ] || continue
+      describe_plugin "${p%/}" "_archive/$(basename "$p")"
+    done
+  fi
 }
 
 # link_one <source-path> <target-path> <label>
@@ -78,11 +95,22 @@ link_one() {
 }
 
 install_plugin() {
-  local plugin="$1" dir="$PLUGINS_DIR/$1"
+  local plugin="$1" dir
+  case "$plugin" in
+    _archive/*) dir="$ARCHIVE_DIR/${plugin#_archive/}" ;;
+    *)          dir="$PLUGINS_DIR/$plugin" ;;
+  esac
+  # The name comes from the command line; refuse anything that could leave its root.
+  case "$plugin" in
+    *..*|/*) warn "plugin '$plugin': invalid name"; return ;;
+  esac
   if [ ! -d "$dir" ]; then
-    warn "plugin '$plugin' not found in $PLUGINS_DIR (see --list)"
+    warn "plugin '$plugin' not found (see --list)"
     return
   fi
+  # From here on $plugin is the bare name: tools/ is linked under it, and an archived
+  # plugin's tools must land at the same path as if it were live.
+  plugin="$(basename "$plugin")"
   say "$plugin:"
 
   local found_any=0 f d name
@@ -171,7 +199,7 @@ main() {
     exit 0
   fi
   if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 0
   fi
 

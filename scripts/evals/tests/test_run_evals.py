@@ -33,7 +33,8 @@ class SubjectResolution(unittest.TestCase):
 
     def test_every_evals_json_resolves_to_a_real_subject(self):
         paths = run_evals.discover_evals_json()
-        self.assertGreaterEqual(len(paths), 4, "fixture discovery found suspiciously few files")
+        # Only `explaining` is live; the other plugins' fixtures sit in `_archive/`, outside discovery.
+        self.assertGreaterEqual(len(paths), 1, "fixture discovery found no files")
         for evals_path in paths:
             with self.subTest(evals=str(evals_path.relative_to(REPO_ROOT))):
                 data = json.loads(evals_path.read_text())

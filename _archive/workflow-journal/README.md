@@ -84,7 +84,7 @@ Output dir precedence: `--out` > `$WF_EXPORT_DIR` > `$WF_JOURNAL_REPO/workflow-j
 ## Layout
 
 ```
-plugins/workflow-journal/
+_archive/workflow-journal/
 ├── .claude-plugin/plugin.json          plugin manifest
 ├── hooks/hooks.json                    native Stop hook (auto-capture)
 ├── install.sh                          symlink + wire/migrate the Stop hook
