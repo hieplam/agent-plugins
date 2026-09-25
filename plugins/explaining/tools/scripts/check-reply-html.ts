@@ -23,7 +23,7 @@
 // effects. The impure edge (reading the reply/manifest/candidate files, scanning cwd,
 // the exit code) lives in buildCandidate, collectHtmlFiles and main().
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { Glob } from 'bun';
@@ -226,19 +226,45 @@ function sha256Of(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+/** Impure edge: resolve a path that is known to exist by following every symlink in
+ * it — including a symlinked ANCESTOR directory (e.g. macOS's `/var` -> `/private/var`,
+ * which every OS tmpdir-based scratch dir sits under) — so two different spellings of
+ * the same file compare equal instead of diverging lexically. Falls back to the
+ * unresolved path on any realpath failure (permission, a race where the file vanishes
+ * between the caller's existence check and this call) so a transient OS error degrades
+ * to the pre-fix, lexical comparison rather than crashing the check (fail-closed-edges). */
+function canonicalize(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
 /** Impure edge: resolve one extracted token against cwd, and — if the file exists —
  * hash it and, when `themed` needs it, read its text. A read failure (permission,
  * vanished between existsSync and readFileSync) folds into "does not exist" rather
- * than crashing the check. */
+ * than crashing the check.
+ *
+ * Containment (fail-closed-edges obligation 4) is decided on the CANONICAL
+ * (symlink-resolved) form of both cwd and the candidate path, not their literal
+ * spelling: a real file reached through a symlinked ancestor (the reply's absolute
+ * path spelled differently from cwd, but the same file) must be treated as inside;
+ * a symlink that lives inside the scratch tree but points outside it must still be
+ * treated as outside. Comparing the literal token's path gets both of those wrong. */
 function buildCandidate(token: string, cwd: string, themed: boolean): Candidate {
   const absPath = isAbsolute(token) ? token : resolve(cwd, token);
-  const rel = relative(cwd, absPath);
-  const relToCwd = rel.startsWith('..') || isAbsolute(rel) ? null : rel;
   if (!existsSync(absPath)) {
+    const rel = relative(cwd, absPath);
+    const relToCwd = rel.startsWith('..') || isAbsolute(rel) ? null : rel;
     return { token, relToCwd, exists: false, sha256: null, content: null };
   }
+  const realCwd = canonicalize(cwd);
+  const realAbsPath = canonicalize(absPath);
+  const rel = relative(realCwd, realAbsPath);
+  const relToCwd = rel.startsWith('..') || isAbsolute(rel) ? null : rel;
   try {
-    const bytes = readFileSync(absPath);
+    const bytes = readFileSync(realAbsPath);
     return {
       token, relToCwd, exists: true, sha256: sha256Of(bytes),
       content: themed ? bytes.toString('utf8') : null,

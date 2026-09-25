@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -400,5 +400,103 @@ describe('main() CLI — end to end, both path shapes (fixtures-mirror-reality)'
     } finally {
       errorSpy.mockRestore();
     }
+  });
+});
+
+// A real, filesystem-level symlinked ANCESTOR directory (fixtures-mirror-reality: not
+// mocked) — the shape of macOS's /var -> /private/var. Two directories, `real` and
+// `aliased`, name the exact same files on disk under two different absolute spellings.
+// This reproduces run-3 of eval-13-reask-gets-html (see task brief): the executor's
+// scratch dir was created by Python's tempfile.mkdtemp() under macOS's unresolved
+// `/var/folders/...`, but Bun's process.cwd() (what check-reply-html.ts actually sees
+// as its cwd once the OS chdir()s into it) reports the kernel-resolved
+// `/private/var/folders/...` — so a reply that names its own output file by the
+// `/var/...` spelling was wrongly judged to be "outside the scratch tree".
+describe('a symlinked ancestor directory (macOS /var vs /private/var shape) — fixtures-mirror-reality', () => {
+  async function withSymlinkedAncestor<T>(
+    run: (real: string, aliased: string) => Promise<T>,
+  ): Promise<T> {
+    const base = mkdtempSync(join(tmpdir(), 'check-reply-html-symlink-'));
+    const real = join(base, 'real');
+    mkdirSync(real);
+    const aliased = join(base, 'aliased');
+    symlinkSync(real, aliased); // aliased -> real: a real symlinked ancestor, not a mock
+    try {
+      return await run(realpathSync(real), aliased);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  }
+
+  test('--expect present, the reply names its own output through the ALIASED spelling while cwd is the RESOLVED spelling: same file, must still pass', async () => {
+    await withSymlinkedAncestor(async (real, aliased) => {
+      const html = themedPage(RICH_BODY);
+      writeFileSync(join(real, 'out.html'), html);
+      const replyPath = join(real, 'reply.md');
+      // The model names the file via the symlinked (unresolved) ancestor spelling —
+      // exactly the /var/... path a real run-3 reply used.
+      writeFileSync(replyPath, `Here it is: ${join(aliased, 'out.html')}`);
+      const manifestPath = join(real, 'manifest.json');
+      writeFileSync(manifestPath, JSON.stringify([])); // out.html absent from manifest -> new this turn
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        // cwd is the RESOLVED spelling, mirroring what process.cwd() reports once the
+        // OS has chdir()'d into a dir reached through a symlinked ancestor.
+        const exitCode = await main([
+          '--reply', replyPath, '--manifest', manifestPath, '--expect', 'present', '--themed',
+        ], real);
+        expect(exitCode).toBe(EXIT_CODE.PASS);
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+  });
+
+  test('containment still holds: a symlink INSIDE the scratch tree pointing OUTSIDE it is still rejected', async () => {
+    await withSymlinkedAncestor(async (real) => {
+      const outsideDir = mkdtempSync(join(tmpdir(), 'check-reply-html-outside-'));
+      try {
+        const html = themedPage(RICH_BODY);
+        writeFileSync(join(outsideDir, 'secret.html'), html);
+        // A symlink that LIVES inside scratch but points somewhere scratch does not own.
+        const escapeLink = join(real, 'escape.html');
+        symlinkSync(join(outsideDir, 'secret.html'), escapeLink);
+        const replyPath = join(real, 'reply.md');
+        writeFileSync(replyPath, `Here it is: ${escapeLink}`);
+        const manifestPath = join(real, 'manifest.json');
+        writeFileSync(manifestPath, JSON.stringify([]));
+        const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+        try {
+          const exitCode = await main([
+            '--reply', replyPath, '--manifest', manifestPath, '--expect', 'present', '--themed',
+          ], real);
+          expect(exitCode).toBe(EXIT_CODE.FAIL);
+        } finally {
+          logSpy.mockRestore();
+        }
+      } finally {
+        rmSync(outsideDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('--expect absent is unaffected: the scan globs cwd directly and never compares two spellings of the reply', async () => {
+    await withSymlinkedAncestor(async (real, aliased) => {
+      mkdirSync(join(real, 'nested'));
+      writeFileSync(join(real, 'nested', 'surprise.html'), themedPage(RICH_BODY));
+      const replyPath = join(real, 'reply.md');
+      writeFileSync(replyPath, 'Common implementations use FNV or MurmurHash.');
+      const manifestPath = join(real, 'manifest.json');
+      writeFileSync(manifestPath, JSON.stringify([]));
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        const viaReal = await main(['--reply', replyPath, '--manifest', manifestPath, '--expect', 'absent'], real);
+        const viaAliased = await main(['--reply', replyPath, '--manifest', manifestPath, '--expect', 'absent'], aliased);
+        expect(viaReal).toBe(EXIT_CODE.FAIL);
+        expect(viaAliased).toBe(EXIT_CODE.FAIL);
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
   });
 });
