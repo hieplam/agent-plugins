@@ -49,7 +49,8 @@ It ships as **one output style plus the scripts that style invokes** — nothing
    text is not the deliverable — an HTML page that helps the reader see the idea, in
    whatever form the author judges carries it best, rendered through
    `render-illustration.ts` so it wears Reading. The reply names its path and stays a
-   short plain-words summary.
+   short plain-words summary. The page skips rule 5's blind-reader review: the reader is
+   waiting, and a further ask is the review.
 
 Rules 1 and 2 are the pair that won an isolated A/B eval against baseline and against
 each rule alone (see `SKILL.md`'s Evidence section for the numbers). Rule 4 is enforced
