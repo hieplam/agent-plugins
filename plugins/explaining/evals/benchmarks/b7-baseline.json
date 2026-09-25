@@ -1,0 +1,16 @@
+{
+ "label": "b7-baseline",
+ "style": "todd-way.md @ master 68e89ee (one-line 'use dataviz etc' hint, no B7)",
+ "exec_model": "(default: Opus 5.5)",
+ "notes": [
+  "case 15 only, --mode with_skill, runs 3; same evals.json rubric and checks as b7-after",
+  "every run invoked dataviz and wore Reading's paper; all 3 failed the grader: no validator run with Reading's paper as --surface, and de-emphasised series in greys that were neither Reading tokens nor dataviz palette"
+ ],
+ "cases": {
+  "15": {
+   "name": "chart-uses-dataviz-inside-reading",
+   "passed": 0,
+   "runs": 3
+  }
+ }
+}

@@ -239,7 +239,9 @@
       "name": "reask-gets-html",
       "style": "todd-way",
       "prompt": "Explain what determines a Bloom filter's false-positive rate.",
-      "turns": ["I still don't get it. Can you explain it again?"],
+      "turns": [
+        "I still don't get it. Can you explain it again?"
+      ],
       "expected_output": "The reader has already gotten a first explanation and said it still isn't landing. The final reply does NOT repeat the same explanation as another wall of text: it stays short, in plain words, and names the path of an HTML page it just built for this second ask. The page itself — read from the artifact text appended above, which is what the final turn actually wrote — genuinely helps the reader see the false-positive-rate idea in a way prose alone had already failed to land: it is not the same explanation pasted into an HTML wrapper, and it is not a stub with only a few words on an otherwise near-empty page. What the page actually contains — its structure, its shape — is entirely the model's own choice; this rubric names no particular form it must take. A reply that just writes more prose with no HTML page at all, or an HTML page that only repeats the earlier wording with no real content of its own, fails this case.",
       "checks": [
         {
@@ -257,13 +259,45 @@
       "name": "non-confused-follow-up-stays-prose",
       "style": "todd-way",
       "prompt": "Explain what determines a Bloom filter's false-positive rate.",
-      "turns": ["Thanks, that's clear. Which hash functions do common implementations use?"],
+      "turns": [
+        "Thanks, that's clear. Which hash functions do common implementations use?"
+      ],
       "expected_output": "This follow-up is a genuinely new, narrow question, not a sign the first explanation didn't land — the reader said it was already clear. The reply answers it directly, in short plain prose, naming common hash functions (e.g. MurmurHash, FNV, xxHash) without building or pointing at any new HTML page. A reply that produces or points at an HTML page here — as if every second turn needs one, regardless of what it actually asked — fails this case, and so does a reply padded with an unrelated illustration.",
       "checks": [
         {
           "name": "narrow-follow-up-stays-prose",
           "command": "bun {skill_dir}/tools/scripts/check-reply-html.ts --reply {reply} --manifest {final_turn_manifest} --expect absent"
         }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "chart-uses-dataviz-inside-reading",
+      "style": "todd-way",
+      "prompt": "latency.csv in this directory has p95 latency in milliseconds per service per quarter. Explain to our team lead how latency moved over the year and which service is the problem.",
+      "expected_output": "The data's shape is the point, so the reply ships a chart on an HTML page that wears Reading (rendered through render-illustration.ts when the transcript shows the explaining tooling was found; in this eval environment it is usually absent, and then a hand-written page following B1's fallback, carrying Reading's paper and ink tokens, is correct) and names its path. Before writing chart code the transcript shows the dataviz skill invoked through the Skill tool, and the chart follows its method: a form that fits the job (the story is one service, checkout, climbing while the rest hold flat, so an emphasis chart with checkout in one hue and the others de-emphasised, or an equally justified form), and series labelled directly rather than by legend alone. The seam between the two is honoured: Reading replaces dataviz's placeholder chrome, so the chart background is Reading's paper and every axis, gridline, label and de-emphasised series colour is a Reading token (var(--ink), var(--ink-soft), var(--rule) and so on), never dataviz's placeholder greys or surfaces and never a hex invented for the occasion; the highlight hue comes from dataviz's documented palette; and the transcript shows dataviz's palette validator run with Reading's paper colour as the --surface (and its verdict obeyed). The reply itself is short plain prose naming checkout as the problem (212 ms to 371 ms, about +75%) while the others stay flat. A reply with no chart, a chart page that does not wear Reading, a chart built without consulting the dataviz skill, a chart carrying an invented or placeholder grey, or no validator run against Reading's paper fails this case.",
+      "files": [
+        {
+          "path": "latency.csv",
+          "source": "plugins/explaining/evals/fixtures/latency.csv"
+        }
+      ],
+      "checks": [
+        {
+          "name": "reply-introduces-every-term-it-uses",
+          "command": "bun {skill_dir}/tools/scripts/check-term-discipline.ts --reply {reply} --max-undefined 1 --max-undefined-ratio 0.34 --terms 'p95,percentile,tail latency,emphasis chart,stat tile'"
+        },
+        {
+          "name": "chart-page-wears-reading",
+          "command": "sh -c 'set -- */*.html; [ -e \"$1\" ] || exit 1; grep -qi \"#f6efdf\" \"$@\"'"
+        },
+        {
+          "name": "dataviz-placeholder-chrome-swapped-for-reading",
+          "command": "sh -c 'set -- */*.html; [ -e \"$1\" ] || exit 1; ! grep -qiE \"#(fcfcfb|1a1a19|f9f9f7|0d0d0d|0b0b0b|52514e|c3c2b7|898781|e1e0d9|2c2c2a|383835)\" \"$@\"'"
+        }
+      ],
+      "artifacts": [
+        "*/*.html"
       ]
     }
   ]
