@@ -283,6 +283,35 @@ describe('main() CLI — --body, typed the way a person types it', () => {
     }
   });
 
+  // G3 (owner ruling 1): the design system themes the page — paper, type, colour tokens,
+  // full-width layout — and must not steer what the model builds inside it. A --body
+  // fragment carrying inline <svg>, a <script>, and a scoped <style> block (none of them
+  // classes specimen.html shows) must reach the rendered page byte-for-byte: proof the
+  // renderer never validates or strips body markup against a fixed vocabulary.
+  test('a --body fragment with inline svg, script, and a scoped style survives verbatim (G3)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'render-body-g3-'));
+    const prev = process.cwd();
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    const fragment = [
+      '<style>.pulse { animation: pulse 1s infinite; }</style>',
+      '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" class="pulse"></circle></svg>',
+      '<script>console.log("model-authored, not a mermaid diagram");</script>',
+    ].join('\n');
+    try {
+      process.chdir(dir);
+      writeFileSync('fragment.html', fragment);
+      const exitCode = await main(['--title', 'Custom visualization', '--body', 'fragment.html', '--out', 'page.html']);
+      expect(exitCode).toBe(0);
+      const html = readFileSync(join(dir, 'page.html'), 'utf8');
+      expect(html).toContain(fragment);
+      expect(html).toContain(GENERATOR_META_TAG);
+    } finally {
+      process.chdir(prev);
+      logSpy.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('the shipped specimen renders, and its diagrams pass the extractor', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'render-specimen-'));
     const logSpy = spyOn(console, 'log').mockImplementation(() => {});
