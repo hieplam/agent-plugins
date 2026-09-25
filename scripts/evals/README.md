@@ -27,12 +27,14 @@ with/without comparison) instead of inventing a new one.
       "agent": "hunter",              // only for kind: "agent" — which agents/<name>.md to test
       "style": "todd-way",            // only for kind: "output-style" — which output-styles/<name>.md to test
       "prompt": "the task given to the model",
+      "turns": ["a follow-up prompt", "another follow-up"], // OPTIONAL — user messages sent AFTER prompt, in order, in the SAME session (see Multi-turn sessions below)
       "expected_output": "prose description of correct behavior — the grading rubric",
       "files": [
         { "path": "a.md", "source": "plugins/explaining/README.md" } // OPTIONAL per-entry — a repo-relative file read verbatim, instead of an inlined "content"
       ],
       "checks": [                     // OPTIONAL — machine commands whose exit code decides pass/fail/ungraded before any LLM grader runs
-        { "name": "html-mermaid-parses", "command": "bun {skill_dir}/scripts/validate-mermaid.ts --html-glob *.html" }
+        { "name": "html-mermaid-parses", "command": "bun {skill_dir}/scripts/validate-mermaid.ts --html-glob *.html" },
+        { "name": "wrote-html", "command": "bun {skill_dir}/scripts/check.ts --manifest {final_turn_manifest}" } // {final_turn_manifest} only meaningful for a `turns` case — see below
       ],
       "artifacts": ["*.html"],        // OPTIONAL — glob patterns preserved from the scratch dir as evidence before it is deleted
       "env": { "KEY": "value" }       // OPTIONAL — per-case env, overrides the top-level `env` key by key
@@ -58,9 +60,10 @@ case names which `agents/<name>.md` it targets).
 **plugin root** — so a check can reach sibling tooling as
 `{skill_dir}/skills/<name>/scripts/…` without a second placeholder.
 
-A check has three placeholders: `{skill_dir}` (above), `{scratch}` (the executor's cwd) and
+A check has four placeholders: `{skill_dir}` (above), `{scratch}` (the executor's cwd),
 `{reply}` — the executor's **final reply**, written to `<scratch>/.eval/reply.md` right before
-the checks run. Without it a check can only judge the files the executor chose to leave
+the checks run — and `{final_turn_manifest}` (`turns` cases only, see Multi-turn sessions
+below). Without `{reply}` a check can only judge the files the executor chose to leave
 behind, never the text the user actually reads; with it a check can gate term discipline, a
 required closing line, or an opening preamble deterministically before the LLM grader gets a
 say. The dot-directory keeps it invisible to absence checks such as
@@ -114,6 +117,50 @@ exactly what the `with_skill` leg's isolation flags do — which would otherwise
 every `with_skill` grading verdict of transcript/tool-call evidence. A second, tool-less `claude -p` call
 (the grader) scores the transcript against `expected_output` and writes `grading.json`
 with evidence. Everything rolls up into one `benchmark.json` per invocation.
+
+### Multi-turn sessions
+
+Every case above runs as a single, isolated `claude -p --no-session-persistence` call —
+one clean-context process, no memory of anything before or after it. That is right for
+most cases, but it cannot exercise a behavior that only shows up on a *re-ask* — a user
+asking the same thing a second time, in the SAME conversation. A case's optional `turns`
+key does that: a list of follow-up prompts, sent after `prompt`, one `claude -p` call per
+turn, all resumed into the SAME session — the mechanism a real user's re-ask actually
+produces, not a second clean-context process that never saw the first answer.
+
+- **Mechanism.** Turn 1 (`prompt`) passes `--session-id <uuid>` (a fixed id the harness
+  generates) instead of `--no-session-persistence`, which persists a session file; every
+  follow-up in `turns` passes `--resume <uuid>` and runs in the same scratch cwd with the
+  same executor configuration (model, style/skill install, env, permission mode) — nothing
+  reconfigures mid-conversation, mirroring a real user who doesn't either. A case with no
+  `turns` key is completely unaffected: it still gets exactly today's single
+  `--no-session-persistence` call.
+- **Isolation.** Every turn's `CLAUDE_CONFIG_DIR` points at a throwaway temp directory the
+  harness creates per case and removes once the case is done, so the session file Claude
+  Code persists for `--resume` to find never lands under the owner's real
+  `~/.claude/projects`.
+- **Grading.** `{reply}` and the LLM grader's verdict are based on the **final** turn's
+  reply — a real re-ask's answer is what the user reads next, not turn 1's
+  already-superseded answer. The grader's transcript concatenates every turn, each
+  labelled `USER (turn n):` ahead of the assistant/tool-call lines that turn produced, so
+  the grader reads the conversation shape a re-ask actually produces. Token/dollar/wall-
+  clock cost sums across every `claude -p` call the case made, since that spend is real
+  regardless of which turn's text gets graded.
+- **`{final_turn_manifest}`.** Immediately before the final turn starts, the harness
+  hashes every file already in scratch (`{"path": ..., "sha256": ...}` per file) and
+  writes that list to a JSON file OUTSIDE scratch — `{final_turn_manifest}` in a check's
+  command resolves to its path. A file counts as **written during the final turn** iff it
+  is absent from that manifest or its hash changed; unchanged means the executor's own
+  fixtures or something an earlier turn produced, not this turn's output. The grader
+  prompt gets the same treatment automatically: the text of every file matching the
+  case's `artifacts` globs that was written during the final turn is appended to the
+  grader prompt (each truncated to 20 000 chars, labelled with its path), so the grader
+  judges the actual page the model built, not only its prose claim about what it built.
+- **Failed turns.** A turn counts as failed if its `claude -p` subprocess itself failed
+  OR its parsed result event carries `is_error: true` (the model surfaced an error, e.g.
+  hit its turn limit). Either way, later turns never run, and the whole case is reported
+  as a harness-level error — the same treatment a failed single-turn `claude -p` call
+  already gets, never miscounted as a graded FAIL.
 
 ### UNGRADED: a harness failure is not an agent failure
 

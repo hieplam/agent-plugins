@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  DESIGN_SYSTEM_DIR, MERMAID_CDN_URL, embedFonts, escapeHtml, fontRefs, loadTheme, main,
-  renderIllustrationHtml, renderPage,
+  DESIGN_SYSTEM_DIR, GENERATOR_META_TAG, MERMAID_CDN_URL, embedFonts, escapeHtml, fontRefs,
+  loadTheme, main, renderIllustrationHtml, renderPage,
 } from './render-illustration';
 import { extractMermaidSources } from './validate-mermaid';
 
@@ -72,6 +72,15 @@ describe('renderIllustrationHtml', () => {
 
 describe('renderPage', () => {
   const theme = { css: '.page {}', script: 'async function renderDiagrams() {}' };
+
+  // A2 (check-reply-html.ts): a page produced by this renderer must be provably
+  // distinguishable from one a check hand-wrote to look similar. Every page carries
+  // this literal marker in its <head>, and check-reply-html.ts's --themed flag reads
+  // it back to prove a page named in a reply actually came from this renderer.
+  test('carries a generator marker proving the page came from this renderer (A2)', () => {
+    const html = renderPage({ title: 't', lede: '', body: '<p>x</p>' }, theme);
+    expect(html).toContain(GENERATOR_META_TAG);
+  });
 
   test('places the body verbatim after the header, and escapes only the title and lede', () => {
     const html = renderPage({ title: 'A & B', lede: '<i>', body: '<div class="grid">x</div>' }, theme);
@@ -267,6 +276,35 @@ describe('main() CLI — --body, typed the way a person types it', () => {
       expect(html).toContain('<p class="lede">Three ways.</p>');
       expect(html).toContain('<article class="card">x</article>');
       expect(html).toContain('url(data:font/woff2;base64,');
+    } finally {
+      process.chdir(prev);
+      logSpy.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // G3 (owner ruling 1): the design system themes the page — paper, type, colour tokens,
+  // full-width layout — and must not steer what the model builds inside it. A --body
+  // fragment carrying inline <svg>, a <script>, and a scoped <style> block (none of them
+  // classes specimen.html shows) must reach the rendered page byte-for-byte: proof the
+  // renderer never validates or strips body markup against a fixed vocabulary.
+  test('a --body fragment with inline svg, script, and a scoped style survives verbatim (G3)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'render-body-g3-'));
+    const prev = process.cwd();
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    const fragment = [
+      '<style>.pulse { animation: pulse 1s infinite; }</style>',
+      '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" class="pulse"></circle></svg>',
+      '<script>console.log("model-authored, not a mermaid diagram");</script>',
+    ].join('\n');
+    try {
+      process.chdir(dir);
+      writeFileSync('fragment.html', fragment);
+      const exitCode = await main(['--title', 'Custom visualization', '--body', 'fragment.html', '--out', 'page.html']);
+      expect(exitCode).toBe(0);
+      const html = readFileSync(join(dir, 'page.html'), 'utf8');
+      expect(html).toContain(fragment);
+      expect(html).toContain(GENERATOR_META_TAG);
     } finally {
       process.chdir(prev);
       logSpy.mockRestore();

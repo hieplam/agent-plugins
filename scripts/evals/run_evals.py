@@ -94,6 +94,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -209,16 +210,26 @@ def parse_frontmatter(path: Path) -> tuple[dict, str]:
 # claude -p invocation
 # ---------------------------------------------------------------------------
 
-def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
-                agents_json: dict | None = None, agent_name: str | None = None,
-                tools: str | None = None, safe_mode: bool = False,
-                isolate_user_scope: bool = False,
-                permission_mode: str | None = None,
-                extra_env: dict | None = None) -> dict:
-    """Run one isolated `claude -p` process and return its parsed result.
+def build_claude_command(prompt: str, model: str | None = None,
+                          agents_json: dict | None = None, agent_name: str | None = None,
+                          tools: str | None = None, safe_mode: bool = False,
+                          isolate_user_scope: bool = False,
+                          permission_mode: str | None = None,
+                          session_id: str | None = None, resume: bool = False) -> list[str]:
+    """Pure: the argv for ONE `claude -p` turn — no cwd, no env, no subprocess.
 
-    Returns a dict with at least: ok (bool), events (list, may be empty on
-    timeout/error), error (str|None).
+    Session persistence decides how this call relates to any other: a case with no
+    `session_id` (every case before multi-turn support, and every single-turn case
+    today) gets exactly today's `--no-session-persistence` — the command a
+    single-turn case sends is byte-for-byte unchanged by this feature existing.
+    A `session_id` with `resume=False` is a case's FIRST turn: it passes
+    `--session-id <uuid>` (a fixed id the caller generates) instead of
+    `--no-session-persistence`, so Claude Code persists a session file under that id
+    for the next turn's `--resume` to find. `resume=True` passes `--resume <uuid>`
+    instead — a follow-up that continues the prior turn's session. The two are
+    mutually exclusive per call: a turn either starts a session or continues one,
+    never both, mirroring how a real user's `-p` session actually works (`--resume`
+    fails outright if no session with that id exists yet).
     """
     # --output-format stream-json (NOT plain "json"), always paired with --verbose:
     # verified empirically that plain `--output-format json` silently collapses from
@@ -232,8 +243,13 @@ def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
     # confirmed system-event `plugins`/`mcp_servers` still read `[]` for isolation),
     # so it is used unconditionally for both configurations here rather than only for
     # the affected leg, to keep with_skill and without_skill parsed identically.
-    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose",
-           "--no-session-persistence"]
+    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
+    if session_id is None:
+        cmd += ["--no-session-persistence"]
+    elif resume:
+        cmd += ["--resume", session_id]
+    else:
+        cmd += ["--session-id", session_id]
     if model:
         cmd += ["--model", model]
     if agents_json:
@@ -286,6 +302,28 @@ def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
         # throwaway command — none of the other locally-installed
         # marketplace plugins (e.g. superpowers:writing-plans) appear.
         cmd += ["--setting-sources", "project", "--strict-mcp-config"]
+    return cmd
+
+
+def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
+                agents_json: dict | None = None, agent_name: str | None = None,
+                tools: str | None = None, safe_mode: bool = False,
+                isolate_user_scope: bool = False,
+                permission_mode: str | None = None,
+                extra_env: dict | None = None,
+                session_id: str | None = None, resume: bool = False) -> dict:
+    """Run one isolated `claude -p` process and return its parsed result.
+
+    Returns a dict with at least: ok (bool), events (list, may be empty on
+    timeout/error), error (str|None). `session_id`/`resume` (see
+    build_claude_command) let a caller send one turn of a multi-turn session; a
+    caller that passes neither gets today's single-shot, unpersisted call.
+    """
+    cmd = build_claude_command(
+        prompt, model=model, agents_json=agents_json, agent_name=agent_name,
+        tools=tools, safe_mode=safe_mode, isolate_user_scope=isolate_user_scope,
+        permission_mode=permission_mode, session_id=session_id, resume=resume,
+    )
 
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     env.update(extra_env or {})
@@ -389,6 +427,297 @@ def extract_metrics(run: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Multi-turn sessions (T1/plan-b6-reask-html): a case's optional `turns` key
+# sends follow-up prompts through the SAME `claude -p` session, the mechanism a
+# real user's re-ask actually produces — never a fresh, context-free process per
+# question, which is what --no-session-persistence gives every case today.
+# ---------------------------------------------------------------------------
+
+def plan_case_turns(case: dict) -> list[dict]:
+    """Pure: the ordered turns for this case, one dict per `claude -p` call —
+    {"user": <text sent this turn>, "resume": <bool>}. `resume` is False for the
+    case's own `prompt` (turn 1, always present) and True for every entry in the
+    optional `turns` list (a follow-up in the SAME session). A case with no
+    `turns` key plans exactly one non-resumed turn, so a single-turn case's
+    command is unaffected by this function existing at all — see
+    plan_turn_commands / build_claude_command.
+    """
+    turns = [{"user": case["prompt"], "resume": False}]
+    for follow_up in case.get("turns") or []:
+        turns.append({"user": follow_up, "resume": True})
+    return turns
+
+
+def plan_turn_commands(case: dict, session_id: str, model: str | None = None,
+                        agents_json: dict | None = None, agent_name: str | None = None,
+                        tools: str | None = None, safe_mode: bool = False,
+                        isolate_user_scope: bool = False,
+                        permission_mode: str | None = None) -> list[list[str]]:
+    """Pure: the argv list for EVERY turn `run_turns` will send for this case, built
+    from the same plan_case_turns() + build_claude_command() run_turns itself uses —
+    the single source of truth for what a case's command line looks like, so this can
+    be asserted on without a subprocess. A case with no `turns` key plans exactly one
+    command, and it never sees `session_id` at all — the identical
+    `--no-session-persistence` command every case sends today. A case WITH `turns`
+    plans one command per turn, all sharing the same executor configuration (model,
+    agents, tools, safe_mode, isolate_user_scope, permission_mode — nothing
+    reconfigures mid-conversation): the first turn passes `--session-id <session_id>`,
+    every later turn passes `--resume <session_id>`.
+    """
+    turns = plan_case_turns(case)
+    multi_turn = len(turns) > 1
+    shared = dict(model=model, agents_json=agents_json, agent_name=agent_name, tools=tools,
+                  safe_mode=safe_mode, isolate_user_scope=isolate_user_scope,
+                  permission_mode=permission_mode)
+    return [
+        build_claude_command(turn["user"],
+                              session_id=session_id if multi_turn else None,
+                              resume=turn["resume"] if multi_turn else False,
+                              **shared)
+        for turn in turns
+    ]
+
+
+def hash_scratch_tree(scratch: Path) -> list[dict]:
+    """Impure edge: sha256 of every regular file under scratch, as sorted
+    `{"path": <scratch-relative>, "sha256": <hex>}` entries — the shape
+    {final_turn_manifest} and A2's grader-artifact block are both built from."""
+    entries = []
+    for p in sorted(scratch.rglob("*")):
+        if p.is_file():
+            entries.append({"path": str(p.relative_to(scratch)),
+                             "sha256": hashlib.sha256(p.read_bytes()).hexdigest()})
+    return entries
+
+
+def files_written_since_manifest(manifest: list, current: list) -> list[str]:
+    """Pure (A2): which `current` paths are new or changed vs `manifest` — i.e.
+    written during the final turn. A path absent from `manifest` (a brand-new file)
+    OR present with a different sha256 (an overwrite) counts; a path present with the
+    SAME sha256 (a fixture the case materialized before turn 1, or anything the final
+    turn left untouched) does not."""
+    before = {e["path"]: e["sha256"] for e in manifest}
+    return [e["path"] for e in current if before.get(e["path"]) != e["sha256"]]
+
+
+def write_final_turn_manifest(scratch: Path, dest: Path) -> Path:
+    """Impure edge: snapshot scratch's current file hashes to `dest`, OUTSIDE scratch,
+    immediately before the final turn starts — {final_turn_manifest} in a case's
+    `checks` resolves to this path. Written outside scratch so the executor (which can
+    read/list its own cwd) never sees or can tamper with the manifest it's about to be
+    measured against."""
+    dest.write_text(json.dumps(hash_scratch_tree(scratch), indent=2))
+    return dest
+
+
+def format_final_turn_artifacts(contents: dict) -> str:
+    """Pure (A2): render {path: text} into the grader-prompt block — each file's text,
+    labelled with its path and truncated to 20 000 chars so one huge artifact can't
+    blow the grader's context, so the grader judges the actual page instead of only
+    the executor's prose claiming what it built. Empty input (no `artifacts` globs
+    matched anything new) renders to "" — GRADER_INSTRUCTIONS substitutes "(none)" for
+    that case, never a confusing blank section."""
+    if not contents:
+        return ""
+    return "\n\n".join(f"--- {path} ---\n{contents[path][:20000]}" for path in sorted(contents))
+
+
+def collect_final_turn_artifact_contents(scratch: Path, manifest_path: Path,
+                                          patterns: list) -> dict:
+    """Impure edge (A2): read the text of every `artifacts`-glob-matching file that was
+    newly created or changed since `manifest_path` was written (files_written_since_manifest)
+    — the files a real re-ask's final turn actually produced. A file that fails to decode
+    as UTF-8 text is skipped (an artifact glob is documented for html/text pages, not
+    binary output), never raised through to crash the case."""
+    if not patterns:
+        return {}
+    manifest = json.loads(manifest_path.read_text())
+    written = set(files_written_since_manifest(manifest, hash_scratch_tree(scratch)))
+    contents: dict[str, str] = {}
+    for pattern in patterns:
+        for src in sorted(scratch.glob(pattern)):
+            if not src.is_file():
+                continue
+            rel = str(src.relative_to(scratch))
+            if rel not in written:
+                continue
+            try:
+                contents[rel] = src.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+    return contents
+
+
+def combine_turns(turns: list) -> dict:
+    """Pure: merge per-turn extract_metrics() dicts (each additionally carrying `user`
+    and `wall_seconds`) into one case-level record shaped like extract_metrics()'s own
+    output, so the rest of run_case treats a 1-turn and a multi-turn case identically
+    from here on. {reply}/grading judge the FINAL turn's reply — a real re-ask's answer
+    is what the user reads next, not turn 1's already-superseded answer — while token/
+    dollar/wall-clock cost SUMS across every `claude -p` call the case actually made,
+    since that spend is real regardless of which turn's text gets graded. The
+    transcript concatenates every turn, each labelled `USER (turn n):` ahead of what
+    extract_metrics already labelled `ASSISTANT:`/`TOOL_USE:`, so the grader reads the
+    conversation shape a real re-ask produces, not just the last answer in isolation.
+    is_error is always False here: run_turns stops and reports a harness error the
+    moment any turn's own is_error is true, so combine_turns is only ever called with
+    turns that all succeeded (A3)."""
+    last = turns[-1]
+    tool_calls: dict[str, int] = {}
+    for t in turns:
+        for name, n in t["metrics"]["tool_calls"].items():
+            tool_calls[name] = tool_calls.get(name, 0) + n
+    transcript = "\n".join(
+        f"USER (turn {i}): {t['user']}" + (f"\n{t['transcript']}" if t["transcript"] else "")
+        for i, t in enumerate(turns, start=1)
+    )
+    metrics = {
+        "tool_calls": tool_calls,
+        "total_tool_calls": sum(t["metrics"]["total_tool_calls"] for t in turns),
+        "total_steps": sum(t["metrics"]["total_steps"] for t in turns),
+        "errors_encountered": sum(t["metrics"]["errors_encountered"] for t in turns),
+        "output_chars": last["metrics"]["output_chars"],
+        "transcript_chars": len(transcript),
+    }
+    return {
+        "metrics": metrics,
+        "timing": last["timing"],
+        "transcript": transcript,
+        "final_result": last["final_result"],
+        "is_error": False,
+        "total_tokens": sum(t["total_tokens"] for t in turns),
+        "total_cost_usd": sum(t["total_cost_usd"] for t in turns),
+        "wall_seconds": sum(t["wall_seconds"] for t in turns),
+    }
+
+
+def resolve_claude_home(env: dict) -> Path:
+    """Pure given `env`: where Claude Code's config/session home resolves to for a
+    `claude -p` call run with this environment — `CLAUDE_CONFIG_DIR` if the
+    environment sets one (an operator's own override), else the CLI's own default
+    of `~/.claude`. A1's fallback isolation needs this to know where the real
+    project-transcript directory it must clean up actually lives.
+    """
+    override = env.get("CLAUDE_CONFIG_DIR")
+    return Path(override) if override else Path.home() / ".claude"
+
+
+def real_project_dir_for_scratch(scratch: Path, claude_home: Path) -> Path:
+    """Pure: the directory Claude Code creates under `<claude_home>/projects/` for a
+    session whose cwd is `scratch` — the SAME `[^a-zA-Z0-9] -> "-"` transform of the
+    RESOLVED absolute cwd Claude Code's own CLI applies to derive a project's
+    transcript directory name. Verified empirically (A1): a session run with cwd
+    `/private/tmp/b6-real-session-test` (a real, non-isolated `claude -p
+    --session-id`) created exactly `~/.claude/projects/-private-tmp-b6-real-session-
+    test/` — nothing else, no separate slugging rule for scratch dirs.
+    """
+    slug = re.sub(r"[^a-zA-Z0-9]", "-", str(scratch.resolve()))
+    return claude_home / "projects" / slug
+
+
+def remove_real_project_transcript(scratch: Path, claude_home: Path) -> bool:
+    """Impure edge (A1 fallback): delete the project-transcript directory Claude
+    Code created for `scratch`'s cwd under the OWNER'S REAL `~/.claude/projects/`.
+
+    Used instead of a `CLAUDE_CONFIG_DIR` override: a real 2-turn smoke run against
+    an isolated `CLAUDE_CONFIG_DIR` (T1's Required evidence #2) reproduced `"Not
+    logged in · Please run /login"` on turn 1 — the CLI's login gate depends on
+    something under the config home besides the OS-keychain credential, so
+    isolating it breaks auth outright. This fallback isolates the ARTIFACT
+    (the transcript Claude Code leaves behind) instead of the whole config home,
+    while auth runs against the operator's real, working configuration.
+
+    fail-closed-edges obligation 4: containment is proven before any deletion. The
+    candidate is resolved and must sit inside `<claude_home>/projects/` (never
+    outside it, even via a symlink), and its name must be EXACTLY this case's own
+    scratch-path transform (real_project_dir_for_scratch) — never a glob, never
+    "whatever's newest" — so a concurrent case's transcript can never be deleted by
+    mistake. Returns False (no-op) if the candidate doesn't exist or fails
+    containment; True if it was removed.
+    """
+    candidate = real_project_dir_for_scratch(scratch, claude_home)
+    if not candidate.is_dir():
+        return False
+    projects_root = (claude_home / "projects").resolve()
+    if not str(candidate.resolve()).startswith(str(projects_root) + os.sep):
+        return False
+    shutil.rmtree(candidate, ignore_errors=True)
+    return True
+
+
+def run_turns(case: dict, scratch: Path, timeout: int, model: str | None,
+              agents_json: dict | None, agent_name: str | None,
+              safe_mode: bool, isolate_user_scope: bool, permission_mode: str | None,
+              extra_env: dict) -> dict:
+    """Impure edge: execute every turn of a multi-turn (`case["turns"]`) case in the
+    SAME Claude Code session, per plan T1 and amendments A1-A3.
+
+      - Session mechanism: turn 1 passes `--session-id <uuid>` (a fixed id this
+        function generates), which persists a session file; every follow-up passes
+        `--resume <uuid>` and runs in the SAME scratch cwd with the SAME executor
+        configuration (model, agents, tools, safe_mode, isolate_user_scope,
+        permission_mode) — nothing reconfigures mid-conversation, mirroring a real
+        user who doesn't either (plan_turn_commands documents the exact command shape).
+      - A1 (isolation, fallback mechanism — see remove_real_project_transcript's
+        docstring for why the primary CLAUDE_CONFIG_DIR approach was rejected). The
+        cleanup itself does NOT happen here: `run_case`'s own grader call reuses this
+        SAME scratch cwd right after this function returns, and it recreates the same
+        real project directory on its own (a bare `claude -p` call — even a
+        `--no-session-persistence` one — leaves an empty `memory/` folder under
+        `~/.claude/projects/<slug-of-cwd>/`, confirmed empirically to be pre-existing
+        Claude Code CLI behavior, not something session persistence introduces).
+        Cleaning up here would only be re-dirtied by that later call, so `run_case`
+        removes it once, in its OWN `finally`, after grading has also finished.
+      - A2: right before the LAST turn starts, the current scratch file hashes are
+        written to a manifest OUTSIDE scratch (write_final_turn_manifest) — the file
+        {final_turn_manifest} in a check resolves to, and the source
+        files_written_since_manifest diffs the grader-artifact block against. If that
+        final turn then fails, the manifest is removed — it would otherwise never be
+        read by anything and would leak a temp file per failed case.
+      - A3: a turn counts as failed if the subprocess itself failed OR the parsed
+        result event carries `is_error: true` (the model surfaced an error, e.g. hit
+        its turn limit). Either way, later turns never run, and the case is reported
+        as a harness-level error — the same treatment a failed single-turn `claude -p`
+        call already gets (never miscounted as a graded FAIL).
+
+    Returns {"ok": True, "turns": [...], "manifest_path": Path} or
+            {"ok": False, "error": "<which turn, and why>"}.
+    """
+    turns_plan = plan_case_turns(case)
+    session_id = str(uuid.uuid4())
+    manifest_path = None
+    turn_results: list[dict] = []
+    for i, turn in enumerate(turns_plan):
+        if i == len(turns_plan) - 1:
+            manifest_fd, manifest_name = tempfile.mkstemp(
+                prefix="agent-plugins-eval-manifest-", suffix=".json")
+            os.close(manifest_fd)
+            manifest_path = Path(manifest_name)
+            write_final_turn_manifest(scratch, manifest_path)
+        exec_run = run_claude(
+            turn["user"], cwd=scratch, timeout=timeout, model=model,
+            agents_json=agents_json, agent_name=agent_name, safe_mode=safe_mode,
+            isolate_user_scope=isolate_user_scope, permission_mode=permission_mode,
+            extra_env=extra_env, session_id=session_id, resume=turn["resume"],
+        )
+        if not exec_run["ok"]:
+            if manifest_path is not None:
+                manifest_path.unlink(missing_ok=True)
+            return {"ok": False,
+                    "error": f"turn {i + 1}/{len(turns_plan)} failed: {exec_run['error']}"}
+        parsed_turn = extract_metrics(exec_run)
+        if parsed_turn["is_error"]:
+            if manifest_path is not None:
+                manifest_path.unlink(missing_ok=True)
+            return {"ok": False,
+                    "error": f"turn {i + 1}/{len(turns_plan)} returned is_error: "
+                             f"{parsed_turn['final_result'][:500]}"}
+        turn_results.append({**parsed_turn, "user": turn["user"],
+                              "wall_seconds": exec_run["wall_seconds"]})
+    return {"ok": True, "turns": turn_results, "manifest_path": manifest_path}
+
+
+# ---------------------------------------------------------------------------
 # Skill registration
 # ---------------------------------------------------------------------------
 
@@ -457,6 +786,11 @@ AGENT'S FULL TRANSCRIPT (assistant text + tool calls it made):
 AGENT'S FINAL MESSAGE:
 {final_result}
 
+FILES THE AGENT WROTE DURING THE FINAL TURN (the actual artifact, not a description of \
+it — judge THIS content, not only the agent's claim about what it built; "(none)" means \
+either this case has no `artifacts` globs or nothing new matched them this turn):
+{final_turn_artifacts}
+
 Judge whether the agent's actual behavior matches the expected behavior. Output ONLY a JSON \
 object, no prose, no markdown fences, matching exactly this shape:
 {{"passed": true or false, "evidence": "one or two sentences quoting or describing what in the \
@@ -465,7 +799,8 @@ transcript/final message supports your verdict"}}
 
 
 def grade(prompt: str, expected_output: str, transcript: str, final_result: str,
-          cwd: Path, timeout: int, model: str | None) -> dict:
+          cwd: Path, timeout: int, model: str | None,
+          final_turn_artifacts: str = "") -> dict:
     """Grade one executor transcript against expected_output.
 
     Returns one of two shapes, and callers must branch on which:
@@ -480,11 +815,17 @@ def grade(prompt: str, expected_output: str, transcript: str, final_result: str,
     silently corrupts any pass-rate read off this suite. Every caller of grade()
     must treat "ungraded" as a third outcome, excluded from pass/total
     denominators, not as a synonym for FAIL.
+
+    `final_turn_artifacts` (A2, multi-turn cases only) is pre-formatted text — see
+    format_final_turn_artifacts — naming and quoting every `artifacts`-glob file the
+    FINAL turn actually wrote, so a case like "re-ask gets HTML" is graded on the real
+    page instead of trusting the executor's own account of what it built.
     """
     grader_prompt = GRADER_INSTRUCTIONS.format(
         prompt=prompt, expected_output=expected_output,
         transcript=transcript[:20000] or "(no assistant output captured)",
         final_result=final_result[:4000],
+        final_turn_artifacts=final_turn_artifacts or "(none)",
     )
     # Isolated exactly like the with_skill executor leg: without this, the grader
     # inherits the operator's own ~/.claude (global CLAUDE.md, plugins, skills, MCP)
@@ -661,14 +1002,18 @@ def plan_env(fixture_env: dict | None, case: dict, scratch: Path) -> dict:
     return {k: str(v).replace("{scratch}", str(scratch)) for k, v in merged.items()}
 
 
-def plan_checks(case: dict, skill_dir: Path | None, scratch: Path) -> list:
+def plan_checks(case: dict, skill_dir: Path | None, scratch: Path,
+                 final_turn_manifest: Path | None = None) -> list:
     """Pure: resolve each declared check into an argv list.
 
     Placeholders: `{skill_dir}` (the skill dir, or the plugin root for an
-    output-style fixture), `{scratch}` (the executor's cwd) and `{reply}` (the file
-    holding the executor's final reply, see REPLY_RELPATH). Substitution is literal
-    replacement (not str.format) so a command containing other braces is never
-    mangled, and the argv is split with shlex so no shell is involved.
+    output-style fixture), `{scratch}` (the executor's cwd), `{reply}` (the file
+    holding the executor's final reply, see REPLY_RELPATH) and `{final_turn_manifest}`
+    (A2 — the {path, sha256} manifest write_final_turn_manifest wrote right before the
+    final turn started; only multi-turn cases pass one in, so a single-turn case's
+    checks never reference it). Substitution is literal replacement (not str.format)
+    so a command containing other braces is never mangled, and the argv is split with
+    shlex so no shell is involved.
     """
     planned = []
     for spec in case.get("checks") or []:
@@ -678,10 +1023,12 @@ def plan_checks(case: dict, skill_dir: Path | None, scratch: Path) -> list:
         # the wrong command (typically FileNotFoundError, silently misclassified
         # CHECK_UNGRADED, masking a real pass/fail). A no-op for space-free paths.
         planned_skill_dir = shlex.quote(str(skill_dir)) if skill_dir else ""
+        planned_manifest = shlex.quote(str(final_turn_manifest)) if final_turn_manifest else ""
         command = (spec["command"]
                     .replace("{skill_dir}", planned_skill_dir)
                     .replace("{scratch}", shlex.quote(str(scratch)))
-                    .replace("{reply}", shlex.quote(str(reply_path(scratch)))))
+                    .replace("{reply}", shlex.quote(str(reply_path(scratch))))
+                    .replace("{final_turn_manifest}", planned_manifest))
         planned.append({"name": spec["name"], "argv": shlex.split(command)})
     return planned
 
@@ -739,6 +1086,9 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
              permission_mode: str | None = None, arm: str = "clean",
              memory_fixture: Path | None = None, fixture_env: dict | None = None) -> dict:
     scratch = Path(tempfile.mkdtemp(prefix="agent-plugins-eval-"))
+    # Bound here (not only inside the multi-turn branch below) so the `finally` block
+    # can always safely check it, however early an exception/early-return happens.
+    final_turn_manifest: Path | None = None
     try:
         try:
             fixtures = materialize_files(scratch, case.get("files"))
@@ -815,25 +1165,47 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
         if verbose:
             print(f"    [{configuration}] executing (timeout={timeout}s)...", file=sys.stderr)
 
-        exec_run = run_claude(
-            case["prompt"], cwd=scratch, timeout=timeout, model=resolved_model,
-            agents_json=agents_json, agent_name=agent_name,
-            safe_mode=(configuration == "without_skill"),
-            isolate_user_scope=(configuration == "with_skill"),
-            permission_mode=permission_mode,
-            extra_env=plan_env(fixture_env, case, scratch),
-        )
-        if not exec_run["ok"]:
-            return {"error": exec_run["error"], "configuration": configuration}
+        executor_env = plan_env(fixture_env, case, scratch)
+        # A case with `turns` (T1/plan-b6-reask-html) sends every follow-up through
+        # `--resume` in the SAME session — a real re-ask, not a fresh context-free
+        # process — via run_turns; a case with no `turns` key takes the exact same
+        # single `run_claude` path this always has, so its command line and behavior
+        # are unaffected by multi-turn support existing.
+        if case.get("turns"):
+            turns_result = run_turns(
+                case, scratch, timeout=timeout, model=resolved_model,
+                agents_json=agents_json, agent_name=agent_name,
+                safe_mode=(configuration == "without_skill"),
+                isolate_user_scope=(configuration == "with_skill"),
+                permission_mode=permission_mode, extra_env=executor_env,
+            )
+            if not turns_result["ok"]:
+                return {"error": turns_result["error"], "configuration": configuration}
+            parsed = combine_turns(turns_result["turns"])
+            executor_wall_seconds = parsed["wall_seconds"]
+            final_turn_manifest = turns_result["manifest_path"]
+        else:
+            exec_run = run_claude(
+                case["prompt"], cwd=scratch, timeout=timeout, model=resolved_model,
+                agents_json=agents_json, agent_name=agent_name,
+                safe_mode=(configuration == "without_skill"),
+                isolate_user_scope=(configuration == "with_skill"),
+                permission_mode=permission_mode,
+                extra_env=executor_env,
+            )
+            if not exec_run["ok"]:
+                return {"error": exec_run["error"], "configuration": configuration}
 
-        parsed = extract_metrics(exec_run)
+            parsed = extract_metrics(exec_run)
+            executor_wall_seconds = exec_run["wall_seconds"]
 
         if verbose:
             print(f"    [{configuration}] grading...", file=sys.stderr)
         grader_start = time.time()
         try:
             write_reply(scratch, parsed["final_result"])
-            check_result = run_checks(plan_checks(case, skill_dir, scratch), scratch, timeout)
+            check_result = run_checks(
+                plan_checks(case, skill_dir, scratch, final_turn_manifest), scratch, timeout)
         except Exception as e:  # noqa: BLE001 - mirrors the fixture/memory guards above:
             # a malformed `checks` spec (missing "command" -> KeyError, a command that
             # resolves to empty/blank -> argv == [] -> subprocess.run([]) IndexError, an
@@ -853,9 +1225,19 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
                         "evidence": f"machine check '{check_result['name']}' could not run — "
                                     f"{check_result['evidence']}"}
         else:
+            # A2: only a multi-turn case has a final_turn_manifest — the manifest
+            # snapshotted right before the graded turn started, so files_written_
+            # since_manifest can tell "written this turn" from "already there" (a
+            # fixture, or something an earlier turn produced).
+            final_turn_artifacts_text = ""
+            if final_turn_manifest is not None:
+                artifact_contents = collect_final_turn_artifact_contents(
+                    scratch, final_turn_manifest, case.get("artifacts"))
+                final_turn_artifacts_text = format_final_turn_artifacts(artifact_contents)
             verdict = grade(
                 case["prompt"], case["expected_output"], parsed["transcript"],
                 parsed["final_result"], cwd=scratch, timeout=timeout, model=grader_model,
+                final_turn_artifacts=final_turn_artifacts_text,
             )
         grader_seconds = time.time() - grader_start
 
@@ -907,9 +1289,9 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
             "summary": summary,
             "execution_metrics": metrics_json,
             "timing": {
-                "executor_duration_seconds": exec_run["wall_seconds"],
+                "executor_duration_seconds": executor_wall_seconds,
                 "grader_duration_seconds": round(grader_seconds, 1),
-                "total_duration_seconds": round(exec_run["wall_seconds"] + grader_seconds, 1),
+                "total_duration_seconds": round(executor_wall_seconds + grader_seconds, 1),
             },
             "artifacts": artifacts,
             "check": check_result["name"],
@@ -926,7 +1308,7 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
                 "passed": grading_json["summary"]["passed"],
                 "ungraded": grading_json["summary"]["ungraded"],
                 "total": grading_json["summary"]["total"],
-                "time_seconds": round(exec_run["wall_seconds"], 1),
+                "time_seconds": round(executor_wall_seconds, 1),
                 "tokens": parsed["total_tokens"],
                 "cost_usd": parsed["total_cost_usd"],
                 "tool_calls": metrics_json["total_tool_calls"],
@@ -936,7 +1318,21 @@ def run_case(case: dict, kind: str, skill_dir: Path | None, agents_dir: Path | N
             "expectations": grading_json["expectations"],
         }
     finally:
+        # A1: only a `turns` case ever runs a session-persisting `claude -p` call
+        # (single-turn cases keep --no-session-persistence, untouched by this at
+        # all) — cleaned up HERE, after grading's own claude -p call in this same
+        # scratch cwd has also finished (see run_turns's docstring for why one
+        # cleanup mid-case isn't enough), and before scratch itself is removed
+        # below (real_project_dir_for_scratch needs scratch to still exist to
+        # resolve its real path).
+        if case.get("turns"):
+            remove_real_project_transcript(scratch, resolve_claude_home(os.environ))
         shutil.rmtree(scratch, ignore_errors=True)
+        # The manifest lives OUTSIDE scratch by design (A2), so it survives the
+        # rmtree above and must be cleaned up on its own — never left behind as a
+        # stray temp file once this case's checks/grading have read it.
+        if final_turn_manifest is not None:
+            final_turn_manifest.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

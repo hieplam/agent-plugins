@@ -10,7 +10,7 @@ It ships as **one output style plus the scripts that style invokes** — nothing
 | Directory | What it is |
 | --- | --- |
 | `output-styles/todd-way.md` | the style itself, appended to the system prompt every turn |
-| `output-styles/design-system/` | Reading, the look every HTML page the style renders wears; installed to `~/.claude/output-styles/design-system/` |
+| `output-styles/design-system/` | Reading — theme only: paper, type and colour tokens for the page, not a say in what it contains; installed to `~/.claude/output-styles/design-system/` |
 | `tools/scripts/` | four `bun` CLIs the style runs; installed to `~/.claude/tools/explaining/` |
 | `tools/references/` | the blind-reader brief template the style renders |
 | `evals/` | the regression fixture, its file fixtures and its ambient-memory fixture |
@@ -22,7 +22,7 @@ It ships as **one output style plus the scripts that style invokes** — nothing
 > only in the style. Read the archived file for its Evidence section — the A/B numbers behind
 > rules 1 and 2, measured against that exact wording — and nothing else.
 
-## The five rules (now Part B of the style)
+## The six rules (now Part B of the style)
 
 1. **Term discipline: define before use.** Any new concept, technology, or technical
    term must be briefly defined or contextualized the first time it appears — never
@@ -45,6 +45,12 @@ It ships as **one output style plus the scripts that style invokes** — nothing
    log record is opened before the reader is dispatched and completed when it returns; the
    review degrades to the self-check only after an attempted dispatch actually fails, which is
    recorded as round 0 in the log.
+6. **A re-ask gets a page, not more prose.** From the reader's second ask, another wall of
+   text is not the deliverable — an HTML page that helps the reader see the idea, in
+   whatever form the author judges carries it best, rendered through
+   `render-illustration.ts` so it wears Reading. The reply names its path and stays a
+   short plain-words summary. The page skips rule 5's blind-reader review: the reader is
+   waiting, and a further ask is the review.
 
 Rules 1 and 2 are the pair that won an isolated A/B eval against baseline and against
 each rule alone (see `SKILL.md`'s Evidence section for the numbers). Rule 4 is enforced
@@ -245,8 +251,9 @@ python3 scripts/evals/run_evals.py --evals plugins/explaining/evals/evals.json -
   `2` is a distinct, non-blocking outcome from `1`.
 - **`render-illustration.ts`** — renders one self-contained HTML document in the Reading
   design system (below): one mermaid diagram with `--diagram`, or any other visualization with
-  `--body <fragment.html>`, a fragment built from the classes `specimen.html` shows. A diagram
-  sits inside a `<div class="mermaid">` element (what `validate-mermaid.ts` looks for); mermaid
+  `--body <fragment.html>`, an HTML fragment the author writes freely — `specimen.html` is a
+  reference for the look, not a limit on the markup. A diagram sits inside a
+  `<div class="mermaid">` element (what `validate-mermaid.ts` looks for); mermaid
   itself loads from a CDN at view time (`@11`, the same major the validator parses with) and is
   the page's only network dependency, because the fonts are embedded as `data:` URIs.
 - **`check-term-discipline.ts`** — reads one reply (the harness hands it `{reply}`) and a list
@@ -303,7 +310,7 @@ left-to-right flowchart fills 2406px, labels read at 20–30px, and body text at
 | --- | --- |
 | `reading.css` | tokens (paper, ink, gold accent; a warm dark "night" set for dark mode or `data-theme="dark"`), the fluid type scale, the full-width page, and every class the specimen shows |
 | `reading.js` | themes mermaid from the colour tokens and sizes each diagram: never wider than its column, at most 2× its natural size, held to 78% of the screen height — but never so small that its labels drop below body-text size (a diagram that tall scrolls down), and never below 14px labels to fit the width (a diagram that wide scrolls sideways in its frame) |
-| `specimen.html` | a body fragment using every class once — the vocabulary the style tells the model to build from |
+| `specimen.html` | a body fragment using every class once — a reference for the look; it does not limit what a page contains |
 | `fonts/` | Libre Caslon Text (400, 400 italic, 700) and the Alegreya subset that supplies its missing Vietnamese letters, with their OFL licences |
 
 It derives from Claude Design's built-in "Classical" theme (the gold `#b68235` accent, hairline
