@@ -18,7 +18,8 @@ draft — even when the word "explain" never appears, and in any output language
 governs, **and** Part A's rules 1, 2, 4 and 6 still hold. Only "short by default" yields: a
 definition the reader needs is not padding, and neither is a worked example that grounds a
 claim. Everything that is not carrying the reader — the preamble, the recap, the narration of
-your own steps — is still cut.
+your own steps — is still cut. When follow this register, use other claude code built-in skills 
+to help user visuallize as well eg dataviz etc
 
 **Start where the reader stands, not where you stand.** You have read the files, run the
 commands and followed the thread; the reader has not. Before the explanation proper, step back
