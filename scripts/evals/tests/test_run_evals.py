@@ -926,5 +926,483 @@ class ToddWayStyle(unittest.TestCase):
         self.assertFalse(any("cache/*" in ln for ln in discovery))
 
 
+# ---------------------------------------------------------------------------
+# T1 (plan-b6-reask-html): multi-turn `claude -p` sessions via `turns`.
+# ---------------------------------------------------------------------------
+
+class BuildClaudeCommandSessionFlags(unittest.TestCase):
+    """The pure argv builder every `run_claude` call goes through."""
+
+    def test_no_session_id_is_byte_for_byte_todays_command(self):
+        cmd = run_evals.build_claude_command("hello")
+        self.assertEqual(cmd, ["claude", "-p", "hello", "--output-format", "stream-json",
+                                "--verbose", "--no-session-persistence"])
+
+    def test_session_id_without_resume_starts_a_session_not_no_persistence(self):
+        cmd = run_evals.build_claude_command("hello", session_id="abc-uuid", resume=False)
+        self.assertIn("--session-id", cmd)
+        self.assertEqual(cmd[cmd.index("--session-id") + 1], "abc-uuid")
+        self.assertNotIn("--no-session-persistence", cmd)
+        self.assertNotIn("--resume", cmd)
+
+    def test_resume_true_passes_resume_with_the_same_id_not_session_id(self):
+        cmd = run_evals.build_claude_command("hello", session_id="abc-uuid", resume=True)
+        self.assertIn("--resume", cmd)
+        self.assertEqual(cmd[cmd.index("--resume") + 1], "abc-uuid")
+        self.assertNotIn("--session-id", cmd)
+        self.assertNotIn("--no-session-persistence", cmd)
+
+
+class PlanCaseTurns(unittest.TestCase):
+    def test_case_with_no_turns_key_plans_one_non_resumed_turn(self):
+        turns = run_evals.plan_case_turns({"prompt": "explain X"})
+        self.assertEqual(turns, [{"user": "explain X", "resume": False}])
+
+    def test_case_with_turns_plans_prompt_first_then_each_follow_up_resumed(self):
+        turns = run_evals.plan_case_turns(
+            {"prompt": "explain X", "turns": ["still confused", "one more time"]})
+        self.assertEqual(turns, [
+            {"user": "explain X", "resume": False},
+            {"user": "still confused", "resume": True},
+            {"user": "one more time", "resume": True},
+        ])
+
+
+class PlanTurnCommands(unittest.TestCase):
+    """The oracle's two named requirements: a single-turn case's command is
+    unchanged, and a 2-turn case's commands carry --session-id then --resume."""
+
+    def test_single_turn_case_command_is_unchanged(self):
+        case = {"id": 1, "name": "x", "prompt": "hello"}
+        [cmd] = run_evals.plan_turn_commands(case, session_id="unused-when-no-turns")
+        self.assertEqual(cmd, ["claude", "-p", "hello", "--output-format", "stream-json",
+                                "--verbose", "--no-session-persistence"])
+
+    def test_two_turn_case_plans_session_id_then_resume_with_the_same_uuid(self):
+        case = {"id": 13, "name": "reask", "prompt": "explain X",
+                "turns": ["I still don't get it."]}
+        turn1, turn2 = run_evals.plan_turn_commands(case, session_id="abc-uuid")
+        self.assertEqual(turn1, ["claude", "-p", "explain X", "--output-format", "stream-json",
+                                  "--verbose", "--session-id", "abc-uuid"])
+        self.assertNotIn("--no-session-persistence", turn1)
+        self.assertEqual(turn2, ["claude", "-p", "I still don't get it.", "--output-format",
+                                  "stream-json", "--verbose", "--resume", "abc-uuid"])
+
+    def test_shared_executor_configuration_reaches_every_turn(self):
+        case = {"id": 13, "name": "reask", "prompt": "explain X", "turns": ["again"]}
+        turn1, turn2 = run_evals.plan_turn_commands(
+            case, session_id="abc-uuid", model="haiku", permission_mode="bypassPermissions")
+        for cmd in (turn1, turn2):
+            self.assertIn("--model", cmd)
+            self.assertEqual(cmd[cmd.index("--model") + 1], "haiku")
+            self.assertIn("--permission-mode", cmd)
+
+
+class ManifestDiffing(unittest.TestCase):
+    """A2: files_written_since_manifest is the ONLY definition of "written this turn"."""
+
+    def test_a_brand_new_path_counts_as_written(self):
+        self.assertEqual(
+            run_evals.files_written_since_manifest([], [{"path": "x.html", "sha256": "abc"}]),
+            ["x.html"])
+
+    def test_a_changed_hash_counts_as_written(self):
+        before = [{"path": "x.html", "sha256": "abc"}]
+        after = [{"path": "x.html", "sha256": "def"}]
+        self.assertEqual(run_evals.files_written_since_manifest(before, after), ["x.html"])
+
+    def test_an_unchanged_hash_is_not_written(self):
+        before = [{"path": "x.html", "sha256": "abc"}]
+        after = [{"path": "x.html", "sha256": "abc"}]
+        self.assertEqual(run_evals.files_written_since_manifest(before, after), [])
+
+
+class HashScratchTree(unittest.TestCase):
+    def test_hashes_every_file_relative_to_scratch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            (scratch / "sub").mkdir()
+            (scratch / "sub" / "a.html").write_text("hi")
+            entries = run_evals.hash_scratch_tree(scratch)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["path"], "sub/a.html")
+            import hashlib as _hashlib
+            self.assertEqual(entries[0]["sha256"], _hashlib.sha256(b"hi").hexdigest())
+
+
+class FormatFinalTurnArtifacts(unittest.TestCase):
+    def test_labels_each_file_with_its_path(self):
+        text = run_evals.format_final_turn_artifacts({"a.html": "<p>hi</p>"})
+        self.assertIn("a.html", text)
+        self.assertIn("<p>hi</p>", text)
+
+    def test_truncates_each_files_content_to_20000_chars(self):
+        text = run_evals.format_final_turn_artifacts({"a.html": "x" * 25000})
+        content_only = text.split("a.html", 1)[1]
+        self.assertLessEqual(content_only.count("x"), 20000)
+
+    def test_no_files_yields_empty_string(self):
+        self.assertEqual(run_evals.format_final_turn_artifacts({}), "")
+
+
+class CombineTurnsTranscriptAndCost(unittest.TestCase):
+    def test_grades_the_final_turns_reply_but_sums_cost_across_every_turn(self):
+        turns = [
+            {"metrics": {"tool_calls": {}, "total_tool_calls": 0, "total_steps": 1,
+                          "errors_encountered": 0, "output_chars": 5, "transcript_chars": 5},
+             "timing": {}, "transcript": "ASSISTANT: first", "final_result": "first",
+             "is_error": False, "total_tokens": 10, "total_cost_usd": 0.01,
+             "user": "explain X", "wall_seconds": 1.0},
+            {"metrics": {"tool_calls": {}, "total_tool_calls": 0, "total_steps": 1,
+                          "errors_encountered": 0, "output_chars": 6, "transcript_chars": 6},
+             "timing": {}, "transcript": "ASSISTANT: again", "final_result": "again",
+             "is_error": False, "total_tokens": 20, "total_cost_usd": 0.02,
+             "user": "still confused", "wall_seconds": 2.0},
+        ]
+        combined = run_evals.combine_turns(turns)
+        self.assertEqual(combined["final_result"], "again")
+        self.assertEqual(combined["total_tokens"], 30)
+        self.assertAlmostEqual(combined["total_cost_usd"], 0.03)
+        self.assertAlmostEqual(combined["wall_seconds"], 3.0)
+        self.assertIn("USER (turn 1): explain X", combined["transcript"])
+        self.assertIn("ASSISTANT: first", combined["transcript"])
+        self.assertIn("USER (turn 2): still confused", combined["transcript"])
+        self.assertIn("ASSISTANT: again", combined["transcript"])
+        self.assertFalse(combined["is_error"])
+
+
+class CheckPlanningFinalTurnManifest(unittest.TestCase):
+    def test_substitutes_the_manifest_path(self):
+        planned = run_evals.plan_checks(
+            {"checks": [{"name": "c", "command": "bun t.ts --manifest {final_turn_manifest}"}]},
+            Path("/s"), Path("/tmp/scr"), final_turn_manifest=Path("/tmp/mani.json"))
+        self.assertEqual(planned[0]["argv"][-1], "/tmp/mani.json")
+
+    def test_a_case_without_a_manifest_leaves_the_call_unaffected(self):
+        # Single-turn cases never pass final_turn_manifest; a check that never
+        # references the placeholder must plan exactly as it does today.
+        planned = run_evals.plan_checks(
+            {"checks": [{"name": "c", "command": "bun t.ts --reply {reply}"}]},
+            Path("/s"), Path("/tmp/scr"))
+        self.assertEqual(planned[0]["argv"][-1], "/tmp/scr/.eval/reply.md")
+
+
+class RunTurnsStopsAfterAFailedTurn(unittest.TestCase):
+    """T1's named test: failed turn 1 -> no turn 2. Covers both A3 failure modes —
+    the subprocess itself failing, and a successful subprocess whose result event
+    carries is_error: true."""
+
+    def test_subprocess_failure_on_turn_one_never_calls_turn_two(self):
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append(args[0])
+            return {"ok": False, "events": [], "error": "boom", "wall_seconds": 0.0}
+
+        case = {"id": 1, "name": "x", "prompt": "p1", "turns": ["p2"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                result = run_evals.run_turns(
+                    case, Path(tmp), timeout=5, model=None, agents_json=None,
+                    agent_name=None, safe_mode=False, isolate_user_scope=False,
+                    permission_mode=None, extra_env={})
+        self.assertEqual(calls, ["p1"])
+        self.assertFalse(result["ok"])
+        self.assertIn("turn 1", result["error"])
+
+    def test_is_error_true_on_turn_one_never_calls_turn_two(self):
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append(args[0])
+            return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                {"type": "result", "result": "sorry, error", "usage": {}, "is_error": True}]}
+
+        case = {"id": 1, "name": "x", "prompt": "p1", "turns": ["p2"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                result = run_evals.run_turns(
+                    case, Path(tmp), timeout=5, model=None, agents_json=None,
+                    agent_name=None, safe_mode=False, isolate_user_scope=False,
+                    permission_mode=None, extra_env={})
+        self.assertEqual(calls, ["p1"])
+        self.assertFalse(result["ok"])
+        self.assertIn("is_error", result["error"])
+
+
+class ResolveClaudeHome(unittest.TestCase):
+    def test_defaults_to_home_dot_claude(self):
+        self.assertEqual(run_evals.resolve_claude_home({}), Path.home() / ".claude")
+
+    def test_respects_an_operator_set_claude_config_dir(self):
+        self.assertEqual(run_evals.resolve_claude_home({"CLAUDE_CONFIG_DIR": "/tmp/x"}),
+                          Path("/tmp/x"))
+
+
+class RealProjectDirForScratch(unittest.TestCase):
+    def test_matches_claude_codes_own_slug_transform(self):
+        """Verified empirically (A1 smoke run, real `claude -p --session-id`, no
+        isolation): cwd /private/tmp/b6-real-session-test produced project dir
+        -private-tmp-b6-real-session-test — every character of the RESOLVED path
+        that isn't [a-zA-Z0-9] becomes '-'."""
+        scratch = Path("/private/tmp/b6-real-session-test")
+        result = run_evals.real_project_dir_for_scratch(scratch, Path("/Users/x/.claude"))
+        self.assertEqual(result,
+                          Path("/Users/x/.claude/projects/-private-tmp-b6-real-session-test"))
+
+
+class RemoveRealProjectTranscript(unittest.TestCase):
+    """A1 fallback (CLAUDE_CONFIG_DIR isolation broke auth — see run_turns's
+    docstring): delete only the ONE directory this case's own scratch path names,
+    proven by containment before any delete (fail-closed-edges obligation 4)."""
+
+    def test_removes_the_directory_matching_this_scratchs_own_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = Path(tmp) / "claude-home"
+            scratch = Path(tmp) / "scratch-dir"
+            scratch.mkdir()
+            expected = run_evals.real_project_dir_for_scratch(scratch, claude_home)
+            expected.mkdir(parents=True)
+            (expected / "session.jsonl").write_text("{}")
+            removed = run_evals.remove_real_project_transcript(scratch, claude_home)
+            self.assertTrue(removed)
+            self.assertFalse(expected.exists())
+
+    def test_a_missing_directory_is_a_harmless_no_op(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = Path(tmp) / "claude-home"
+            scratch = Path(tmp) / "scratch-dir"
+            scratch.mkdir()
+            self.assertFalse(run_evals.remove_real_project_transcript(scratch, claude_home))
+
+    def test_never_deletes_outside_the_projects_root_even_via_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = Path(tmp) / "claude-home"
+            (claude_home / "projects").mkdir(parents=True)
+            scratch = Path(tmp) / "scratch-dir"
+            scratch.mkdir()
+            outside = Path(tmp) / "outside-victim"
+            outside.mkdir()
+            (outside / "keepme.txt").write_text("do not delete")
+            candidate = run_evals.real_project_dir_for_scratch(scratch, claude_home)
+            candidate.symlink_to(outside, target_is_directory=True)
+            removed = run_evals.remove_real_project_transcript(scratch, claude_home)
+            self.assertFalse(removed)
+            self.assertTrue((outside / "keepme.txt").exists())
+
+
+class RunCaseCleansUpTheRealProjectTranscriptAfterGrading(unittest.TestCase):
+    """A1 fallback, exercised at the run_case level: cleaning up right after
+    run_turns's own two turns is NOT enough — the grader's own `claude -p` call
+    reuses the SAME scratch cwd and recreates the directory on its own (measured:
+    even a bare, non-session `claude -p` call leaves an empty `memory/` folder
+    under `~/.claude/projects/<slug>/`). Only a cleanup that runs AFTER grading
+    too (run_case's own `finally`) can leave nothing behind."""
+
+    def test_transcript_directory_is_removed_after_grading_touches_the_same_cwd(self):
+        seen_dirs = []
+        claude_home_box = {}
+
+        def fake_run(*args, **kwargs):
+            scratch = kwargs["cwd"]
+            transcript_dir = run_evals.real_project_dir_for_scratch(
+                scratch, claude_home_box["claude_home"])
+            transcript_dir.mkdir(parents=True, exist_ok=True)
+            seen_dirs.append(transcript_dir)
+            if len(seen_dirs) <= 2:  # turn 1, turn 2
+                return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                    {"type": "result", "result": "ok", "usage": {}, "is_error": False}]}
+            return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [  # grader
+                {"type": "result", "result": '{"passed": true, "evidence": "ok"}',
+                 "usage": {}}]}
+
+        case = {"id": 1, "name": "x", "prompt": "p1", "turns": ["p2"], "expected_output": "e",
+                "style": "todd"}
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "skill"
+            (skill_dir / "output-styles").mkdir(parents=True)
+            (skill_dir / "output-styles" / "todd.md").write_text("---\nname: todd\n---\nbody\n")
+            claude_home_box["claude_home"] = Path(tmp) / "claude-home"
+            with mock.patch.dict(run_evals.os.environ,
+                                  {"CLAUDE_CONFIG_DIR": str(claude_home_box["claude_home"])}):
+                with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                    run_evals.run_case(case, "output-style", skill_dir, None, "with_skill",
+                                        timeout=5, exec_model=None, grader_model=None,
+                                        out_dir=Path(tmp) / "out", verbose=False)
+        self.assertEqual(len(seen_dirs), 3, "turn 1, turn 2, and the grader call all ran")
+        self.assertEqual(len(set(seen_dirs)), 1, "every call used the SAME scratch cwd")
+        self.assertFalse(seen_dirs[-1].exists(),
+                          "must be gone even though the grader recreated it after run_turns")
+
+
+class RunTurnsWritesTheFinalTurnManifestOutsideScratch(unittest.TestCase):
+    def test_manifest_lists_scratch_files_present_before_the_last_turn(self):
+        def fake_run(*args, **kwargs):
+            return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                {"type": "result", "result": "ok", "usage": {}, "is_error": False}]}
+
+        case = {"id": 1, "name": "x", "prompt": "p1", "turns": ["p2"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch"
+            scratch.mkdir()
+            (scratch / "seed.txt").write_text("hi")
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                result = run_evals.run_turns(
+                    case, scratch, timeout=5, model=None, agents_json=None,
+                    agent_name=None, safe_mode=False, isolate_user_scope=False,
+                    permission_mode=None, extra_env={})
+        manifest_path = result["manifest_path"]
+        self.assertFalse(str(manifest_path).startswith(str(scratch)),
+                          "manifest must sit OUTSIDE scratch")
+        manifest = json.loads(manifest_path.read_text())
+        self.assertEqual([e["path"] for e in manifest], ["seed.txt"])
+        manifest_path.unlink()
+
+
+class RunClaudeSessionFlagsReachTheSubprocess(unittest.TestCase):
+    def test_session_id_without_resume_reaches_subprocess_run(self):
+        with mock.patch.object(run_evals.subprocess, "run",
+                               side_effect=FileNotFoundError) as run:
+            run_evals.run_claude("p", cwd=Path("/tmp"), timeout=5,
+                                 session_id="abc", resume=False)
+        cmd = run.call_args.args[0]
+        self.assertIn("--session-id", cmd)
+        self.assertNotIn("--no-session-persistence", cmd)
+
+    def test_resume_reaches_subprocess_run_with_the_same_id(self):
+        with mock.patch.object(run_evals.subprocess, "run",
+                               side_effect=FileNotFoundError) as run:
+            run_evals.run_claude("p", cwd=Path("/tmp"), timeout=5,
+                                 session_id="abc", resume=True)
+        cmd = run.call_args.args[0]
+        self.assertIn("--resume", cmd)
+        self.assertEqual(cmd[cmd.index("--resume") + 1], "abc")
+
+
+class GradeIncludesFinalTurnArtifacts(unittest.TestCase):
+    def test_final_turn_artifacts_text_reaches_the_grader_prompt(self):
+        seen = {}
+
+        def fake_run(*args, **kwargs):
+            seen["prompt"] = args[0]
+            return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                {"type": "result", "result": '{"passed": true, "evidence": "ok"}', "usage": {}}]}
+
+        with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+            run_evals.grade("prompt", "expected", "transcript", "final",
+                             cwd=Path("/tmp"), timeout=5, model=None,
+                             final_turn_artifacts="--- page.html ---\n<p>hi</p>")
+        self.assertIn("page.html", seen["prompt"])
+        self.assertIn("<p>hi</p>", seen["prompt"])
+
+
+class RunCaseSingleTurnCommandUnchanged(unittest.TestCase):
+    """Oracle: a single-turn case must behave byte-for-byte as today. Proven at the
+    run_case level, not just build_claude_command's: no `turns` key means run_claude
+    is never even offered a session_id/resume kwarg."""
+
+    def test_no_turns_key_never_passes_session_kwargs(self):
+        seen = {}
+
+        def fake_run(*args, **kwargs):
+            seen["kwargs"] = kwargs
+            return {"ok": False, "events": [], "error": "stop", "wall_seconds": 0}
+
+        case = {"id": 1, "name": "x", "prompt": "p", "expected_output": "e"}
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "skill"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text("---\nname: throwaway\n---\nbody\n")
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                run_evals.run_case(case, "skill", skill_dir, None, "with_skill", timeout=5,
+                                    exec_model=None, grader_model=None,
+                                    out_dir=Path(tmp) / "out", verbose=False)
+        self.assertNotIn("session_id", seen["kwargs"])
+        self.assertNotIn("resume", seen["kwargs"])
+
+
+class RunCaseMultiTurn(unittest.TestCase):
+    """Integration: run_case sends a real 2-turn session, grades the FINAL turn's
+    reply, and the persisted transcript lists every user turn."""
+
+    def test_final_reply_is_the_last_turns_result_and_transcript_lists_every_turn(self):
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append({"prompt": args[0], "session_id": kwargs.get("session_id"),
+                          "resume": kwargs.get("resume")})
+            text = "first explanation" if len(calls) == 1 else "APPLE, the word from turn 1"
+            return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}},
+                {"type": "result", "result": text, "usage": {}, "is_error": False}]}
+
+        case = {"id": 13, "name": "reask", "prompt": "Explain X.",
+                "turns": ["What word did you just say?"], "expected_output": "e",
+                "style": "todd",
+                # Short-circuits grading deterministically (same trick as
+                # RunCaseWritesTheReplyBeforeChecks) — no third (grader) run_claude call.
+                "checks": [{"name": "always-fail", "command": "sh -c 'exit 1'"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "skill"
+            (skill_dir / "output-styles").mkdir(parents=True)
+            (skill_dir / "output-styles" / "todd.md").write_text("---\nname: todd\n---\nbody\n")
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                result = run_evals.run_case(
+                    case, "output-style", skill_dir, None, "with_skill", timeout=5,
+                    exec_model=None, grader_model=None, out_dir=Path(tmp) / "out", verbose=False)
+            transcript_md = (Path(tmp) / "out" / "eval-13-reask" / "clean" / "with_skill"
+                              / "run-1" / "transcript.md").read_text()
+
+        self.assertEqual(len(calls), 2, "exactly one claude -p call per turn, no grader call")
+        self.assertEqual(calls[0]["resume"], False)
+        self.assertEqual(calls[1]["resume"], True)
+        self.assertIsNotNone(calls[0]["session_id"])
+        self.assertEqual(calls[0]["session_id"], calls[1]["session_id"])
+        self.assertIn("Final result\nAPPLE, the word from turn 1", transcript_md)
+        self.assertIn("USER (turn 1): Explain X.", transcript_md)
+        self.assertIn("USER (turn 2): What word did you just say?", transcript_md)
+        self.assertNotIn("error", result)
+
+
+class RunCaseAppendsFinalTurnArtifactsToTheGraderPrompt(unittest.TestCase):
+    """A2: the grader must see the ACTUAL html the final turn wrote, not just a claim
+    about it — a stub that lies about writing a page must be catchable."""
+
+    def test_html_written_during_the_final_turn_reaches_the_grader(self):
+        scratch_box = {}
+
+        def fake_run(*args, **kwargs):
+            prompt = args[0]
+            if "scratch" not in scratch_box:
+                scratch_box["scratch"] = kwargs["cwd"]
+                return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                    {"type": "result", "result": "first explanation", "usage": {},
+                     "is_error": False}]}
+            if "turn2_ran" not in scratch_box:
+                scratch_box["turn2_ran"] = True
+                (scratch_box["scratch"] / "page.html").write_text("<p>visual idea</p>")
+                return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                    {"type": "result", "result": "see page.html", "usage": {},
+                     "is_error": False}]}
+            scratch_box["grader_prompt"] = prompt
+            return {"ok": True, "wall_seconds": 0.01, "error": None, "events": [
+                {"type": "result", "result": '{"passed": true, "evidence": "ok"}',
+                 "usage": {}}]}
+
+        case = {"id": 14, "name": "reask2", "prompt": "Explain X.",
+                "turns": ["Still confused."], "expected_output": "e",
+                "artifacts": ["*.html"], "style": "todd"}
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "skill"
+            (skill_dir / "output-styles").mkdir(parents=True)
+            (skill_dir / "output-styles" / "todd.md").write_text("---\nname: todd\n---\nbody\n")
+            with mock.patch.object(run_evals, "run_claude", side_effect=fake_run):
+                run_evals.run_case(case, "output-style", skill_dir, None, "with_skill",
+                                    timeout=5, exec_model=None, grader_model=None,
+                                    out_dir=Path(tmp) / "out", verbose=False)
+        self.assertIn("page.html", scratch_box["grader_prompt"])
+        self.assertIn("visual idea", scratch_box["grader_prompt"])
+
+
 if __name__ == "__main__":
     unittest.main()
