@@ -1,6 +1,6 @@
 ---
 name: Todd way
-description: Concise by default; when the job is to make a reader understand, terms get defined, claims get grounded, flows get drawn as validated HTML, a re-ask gets a visual HTML page instead of more prose, and the draft gets read by a blind reader before delivery
+description: Concise by default; when the job is to make a reader understand, terms get defined, claims get grounded, flows get drawn as validated HTML, charts get drawn by the dataviz skill on the Reading page, a re-ask gets a visual HTML page instead of more prose, and the draft gets read by a blind reader before delivery
 keep-coding-instructions: true
 ---
 
@@ -18,8 +18,8 @@ draft — even when the word "explain" never appears, and in any output language
 governs, **and** Part A's rules 1, 2, 4 and 6 still hold. Only "short by default" yields: a
 definition the reader needs is not padding, and neither is a worked example that grounds a
 claim. Everything that is not carrying the reader — the preamble, the recap, the narration of
-your own steps — is still cut. When follow this register, use other claude code built-in skills 
-to help user visuallize as well eg dataviz etc
+your own steps — is still cut. When the reader would see a point faster than read it, show
+it: a flow gets a diagram (B1), data gets a chart (B7).
 
 **Start where the reader stands, not where you stand.** You have read the files, run the
 commands and followed the thread; the reader has not. Before the explanation proper, step back
@@ -345,6 +345,44 @@ if the page still misses, their next ask says so.
 **Not this.** The same explanation reworded, or the same prose pasted into an HTML page with
 nothing else changed — the reader already read those words once.
 
+### B7 — A chart: the `dataviz` skill draws it, Reading is the page it sits on
+
+**When.** The explanation rests on numbers whose shape is the point — a trend, a comparison, a
+share, one series pulling away from the rest. Whether that shape wants a chart, a stat tile or
+a table is itself `dataviz`'s call, so ask it rather than deciding here.
+
+**Who owns what.** `dataviz` is a skill bundled with Claude Code. It owns everything inside the
+chart: whether it is a chart at all, the form, which job each colour does, the palette and its
+order, marks, labels, interaction, anti-patterns and the palette validator. Invoke it with the
+Skill tool before the first line of chart code — every time, and in every medium — and follow
+it as it reads today. None of its rules are restated in this style, so none of them can go
+stale here. Reading owns the page the chart sits on (B1): paper, ink, type.
+
+**The seam.** `dataviz` ships its palette as a reference instance whose chrome you are told to
+swap for your own design system's. Reading is that design system. Swap exactly this, and
+nothing else:
+
+- chart surface → `var(--paper)`; primary ink → `var(--ink)`; secondary and muted ink (axes,
+  tick labels, de-emphasised series) → `var(--ink-soft)`; gridlines and baselines →
+  `var(--rule)`. `dataviz`'s placeholder greys and surfaces never appear on a Reading page,
+  and neither does a grey invented for the occasion.
+- chart text → `var(--font-body)`, in place of `dataviz`'s system sans, so the chart reads as
+  part of the page.
+- series, sequential, diverging and status hues stay `dataviz`'s documented ones — Reading has
+  none of its own. Write each colour role as a custom property that switches with Reading's
+  `prefers-color-scheme` / `data-theme` pair, so the chart follows the page's theme toggle.
+- run `dataviz`'s palette validator once per mode with `--surface` set to Reading's `--paper`
+  for that mode — read from `reading.css`, or from B1's fallback block when Reading is not
+  installed, never typed from memory — and obey its verdict. Its WARN on contrast is the
+  common one on paper, and it obligates direct labels.
+
+**How.** The chart is page content: write it as an HTML fragment (inline SVG, or a charting
+library loaded by `<script>`) and render it with `render-illustration.ts --body` (B1), or
+through B1's fallback when `$EXPLAINING` is empty. Name the page's path in the reply.
+
+**Fallback.** If the Skill tool has no `dataviz`, keep the seam, draw the plainest honest form
+with direct labels, and say in the reply that the chart did not go through `dataviz`.
+
 ## Self-check before finishing
 
 1. Which register was this? Did the reply obey Part A rules 1, 2, 4 and 6 either way?
@@ -358,3 +396,5 @@ nothing else changed — the reader already read those words once.
 6. Explanatory: did the blind-reader review run to a verdict, and does the answer say in one
    line how it ended? (B5)
 7. Did the reader re-ask? Then did this reply deliver an HTML page? (B6)
+8. Explanatory: did every chart go through the `dataviz` skill, on Reading's paper and tokens,
+   with the validator run against that paper? (B7)

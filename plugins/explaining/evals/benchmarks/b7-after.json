@@ -1,0 +1,27 @@
+{
+ "label": "b7-after",
+ "style": "todd-way.md @ HEAD of explaining/dataviz-seam",
+ "exec_model": "(default: Opus 5.5)",
+ "notes": [
+  "case 15 only, --mode with_skill, runs 3",
+  "all 3: dataviz invoked before chart code, validator run with --surface #f6efdf (light) and #1c1915 (dark), page colours limited to Reading tokens plus dataviz slot-1 blue, chart text var(--font-body)",
+  "regression spot-check, same day, branch vs master (master worktree, same evals.json): case 4 branch 2/3 (one 420s-timeout run failed mermaid validation on a placeholder-substitution hack, no dataviz call) vs master 1/2; case 7 branch 0/3 vs master 1/2, failing on a bare 'connection pooler'/'idle in transaction' term, 0/1 in both b6 benchmarks too; neither case invoked dataviz or drew a chart"
+ ],
+ "cases": {
+  "15": {
+   "name": "chart-uses-dataviz-inside-reading",
+   "passed": 3,
+   "runs": 3
+  },
+  "4": {
+   "name": "multi-actor-flow-illustrated",
+   "passed": 2,
+   "runs": 3
+  },
+  "7": {
+   "name": "error-message-question-is-explanatory-in-disguise",
+   "passed": 0,
+   "runs": 3
+  }
+ }
+}

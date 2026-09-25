@@ -22,7 +22,7 @@ It ships as **one output style plus the scripts that style invokes** — nothing
 > only in the style. Read the archived file for its Evidence section — the A/B numbers behind
 > rules 1 and 2, measured against that exact wording — and nothing else.
 
-## The six rules (now Part B of the style)
+## The seven rules (now Part B of the style)
 
 1. **Term discipline: define before use.** Any new concept, technology, or technical
    term must be briefly defined or contextualized the first time it appears — never
@@ -51,6 +51,22 @@ It ships as **one output style plus the scripts that style invokes** — nothing
    `render-illustration.ts` so it wears Reading. The reply names its path and stays a
    short plain-words summary. The page skips rule 5's blind-reader review: the reader is
    waiting, and a further ask is the review.
+7. **A chart is drawn by the `dataviz` skill, on the Reading page.** `dataviz` is a skill
+   bundled with Claude Code that owns everything inside a chart — whether a chart is right at
+   all, the form, the palette, labels and its palette validator. The style invokes it before
+   any chart code and restates none of its rules, so a `dataviz` update reaches this style
+   with no edit here. The style only states the seam: `dataviz` ships its palette as a
+   reference instance to swap for your own design system, and Reading is that design system.
+   Chart surface, ink, gridlines, de-emphasised series and chart text take Reading's tokens
+   (`var(--paper)`, `var(--ink)`, `var(--ink-soft)`, `var(--rule)`, `var(--font-body)`);
+   series hues stay `dataviz`'s; the validator runs with `--surface` set to Reading's paper.
+   Measured with that validator on 2026-09-25: `dataviz`'s eight categorical colours pass
+   every hard gate on Reading's paper in both modes, and in light mode four of them sit
+   below 3:1 contrast, which obligates direct labels. Eval case 15 went 0/3 → 3/3 with this
+   rule (`evals/benchmarks/b7-baseline.json` → `b7-after.json`): before it, the style's
+   one-line hint already got `dataviz` invoked, but no run checked the palette against
+   Reading's paper, and runs filled de-emphasised series with greys that were neither
+   Reading's nor `dataviz`'s.
 
 Rules 1 and 2 are the pair that won an isolated A/B eval against baseline and against
 each rule alone (see `SKILL.md`'s Evidence section for the numbers). Rule 4 is enforced
