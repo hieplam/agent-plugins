@@ -198,5 +198,53 @@ class ArchivedSkillIsOutsideThePluginTree(unittest.TestCase):
         self.assertIn("Todd way", head)
 
 
+class ArchivedPluginsAreOptIn(unittest.TestCase):
+    """`_archive/<name>/` holds retired plugins: never part of "install ALL", but
+    installable by naming them with the `_archive/` prefix."""
+
+    def test_install_all_links_no_archived_plugin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "claude"
+            self.assertEqual(run_installer(target, timeout=120).returncode, 0)
+            self.assertFalse((target / "skills" / "splitting-plans").exists())
+            self.assertFalse((target / "agents" / "research-to-blog.md").exists())
+
+    def test_an_archived_plugin_installs_when_named_with_its_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "claude"
+            proc = run_installer(target, "_archive/splitting-plans")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stderr, "")
+            link = target / "skills" / "splitting-plans"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(
+                link.resolve(),
+                (REPO_ROOT / "_archive/splitting-plans/skills/splitting-plans").resolve())
+
+    def test_an_archived_plugin_installs_from_another_cwd(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = run_installer(Path(tmp) / "claude", "_archive/research-to-blog", cwd=tmp)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue((Path(tmp) / "claude/agents/research-to-blog.md").is_symlink())
+
+    def test_a_name_that_escapes_the_repo_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = run_installer(Path(tmp) / "claude", "_archive/../plugins/explaining")
+            self.assertIn("invalid name", proc.stderr)
+            self.assertFalse((Path(tmp) / "claude/output-styles").exists())
+
+    def test_list_shows_archived_plugins_with_their_install_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = run_installer(Path(tmp) / "claude", "--list")
+            self.assertIn("_archive/splitting-plans", proc.stdout)
+
+    def test_every_archived_plugin_installs_without_warnings(self):
+        for plugin in sorted(p.name for p in (REPO_ROOT / "_archive").iterdir() if p.is_dir()):
+            with self.subTest(plugin=plugin), tempfile.TemporaryDirectory() as tmp:
+                proc = run_installer(Path(tmp) / "claude", f"_archive/{plugin}")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stderr, "")
+
+
 if __name__ == "__main__":
     unittest.main()
