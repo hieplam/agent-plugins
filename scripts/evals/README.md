@@ -359,6 +359,14 @@ This repo ships no baseline yet. Record one before the first trim: run the suite
 `scripts/evals/baselines/<date>-<label>/` with a README stating the models, run count and
 known-invalid cases.
 
+## Barrier eval — a separate runner in `barriers/`
+
+`barriers/` measures something this harness does not: whether an output style would have spared
+the owner a follow-up they really had to send, replayed from their own Claude Code history. It
+has its own runner because its sessions must never touch a real repo (no shell, every permission
+prompt denied — the opposite of this harness's `bypassPermissions` default) and because it compares
+several style versions on the same cases. See [`barriers/README.md`](barriers/README.md).
+
 ## Two harness bugs this mode required fixing
 
 Both produced **false FAILs** — harness artifacts scored as agent defects. Any regression signal
