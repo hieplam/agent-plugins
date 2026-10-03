@@ -166,6 +166,17 @@ points it at the scratch directory its checks inspect;
 once per session. Subagents are unaffected — they run their own system prompt, which is also
 why the blind-reader review still works: the reader never inherits the style.
 
+## The barrier eval (`scripts/evals/barriers/`)
+
+The fixture below checks that the style **follows its rules** on hand-written questions. The barrier
+eval checks whether the style **would have prevented the owner's real follow-ups** — "qmd là gì?",
+"explain more with surrounding context", "done?" — replayed from their own history, under three
+arms: no output style, Todd way before Part C, Todd way with Part C. Its cases are private and live
+in the owner's `research` repo; the runner, the judge, the report and the ratchet live in
+[`scripts/evals/barriers/`](../../scripts/evals/barriers/README.md). Part C was written from 10 of
+the sessions it replays, so those cases are reported apart, and words from eval cases must not be
+added to Part C's dictionary.
+
 ## The eval fixture for the style (`evals/evals.json`)
 
 The only live fixture for these rules — `test_is_the_only_live_explaining_fixture` fails if a

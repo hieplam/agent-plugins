@@ -1,0 +1,5 @@
+[
+  {"name": "no-style", "style": null},
+  {"name": "todd-way-before-c", "style": {"ref": "7f64ca7d87ec3cfccde7e2014963704341695a28", "path": "plugins/explaining/output-styles/todd-way.md"}},
+  {"name": "todd-way-with-c", "style": {"ref": "97ca37d9382b2e9365b69c085a33bea8329b2ba0", "path": "plugins/explaining/output-styles/todd-way.md"}}
+]
