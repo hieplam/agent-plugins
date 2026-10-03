@@ -159,7 +159,7 @@ def validate_case(case):
 
 _LABELS = {"user": "user", "assistant": "assistant", "tool_call": "tool call", "tool_result": "tool result"}
 
-REPLAY_FRAME = """This is a working session that was already in progress. Below are the conversation so far, the user's newest message, and the tool calls you already made for that message, with their results. Continue the session: write your reply to the newest message, as you would in that session. You cannot run commands now; base the reply on what is shown here.
+REPLAY_FRAME = """This is a working session that was already in progress. Below are the conversation so far, the user's newest message, and the tool calls you already made for that message, with their results. Continue the session: write your reply to the newest message, as you would in that session. The repositories, network and background processes of that session are not available now, so base the reply on what is shown here.
 
 <conversation>
 {conversation}
@@ -190,13 +190,33 @@ def build_session_prompt(case):
     )
 
 
-# The session under test can read and write files in its own folder and dispatch subagents (the
-# Todd way style's blind reader needs one). It has no shell and no web, and every permission
-# prompt is denied: a replayed "pr then merge" must not reach a real repository.
-SESSION_TOOLS = "Read,Glob,Grep,Write,Edit,Agent"
+# The session under test runs the way the owner runs Claude Code: in bypassPermissions mode, with
+# the shell. Three walls keep a replayed session ("pr then merge") from touching anything real,
+# each verified with a live session on 2026-10-03:
+# - the shell runs in Claude Code's sandbox: it writes only to its own folder and the temp area
+#   (`touch` inside ~/repos/tribe: "Operation not permitted");
+# - the sandbox denies every network domain (curl, gh, git over https and ssh all failed);
+# - deny rules stop the file tools from writing anywhere under the owner's home folder.
+# Without bypass mode, Claude Code refuses compound shell commands such as the Todd way style's own
+# tool lookup, which would handicap the style in a way the owner never sees.
+SESSION_TOOLS = "Bash,Read,Glob,Grep,Write,Edit,Agent"
 SESSION_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 # The name Claude Code reports in its init event when no output style is selected.
 NO_STYLE = "default"
+
+
+def session_settings(style_name, home):
+    """The project settings every session runs under: the sandbox, the deny rules, and the arm's
+    style if it has one. `home` is the owner's home folder, which the file tools may not write in."""
+    settings = {
+        "sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False,
+                    "network": {"allowedDomains": [], "deniedDomains": ["*"]}},
+        "permissions": {"deny": [f"{tool}(/{home}/**)" for tool in ("Write", "Edit", "NotebookEdit")]
+                        + ["WebFetch", "WebSearch"]},
+    }
+    if style_name:
+        settings["outputStyle"] = style_name
+    return settings
 
 
 def build_session_command(model, effort, max_budget_usd):
@@ -210,7 +230,7 @@ def build_session_command(model, effort, max_budget_usd):
         "--strict-mcp-config",
         "--no-session-persistence",
         "--tools", SESSION_TOOLS,
-        "--permission-mode", "acceptEdits",
+        "--permission-mode", "bypassPermissions",
         "--permission-prompts", "none",
         "--exclude-dynamic-system-prompt-sections",
         "--output-format", "stream-json", "--verbose",
@@ -419,7 +439,7 @@ STUB_FRAME = """Below is a message an engineer sent to their AI coding assistant
 
 
 def build_stub_prompt(case):
-    """A deliberately flawed reply for a reask case. The judge must say the follow-up is still
+    """A deliberately flawed reply for a case. The judge must say the follow-up is still
     needed; a judge that passes the stub cannot tell the flaw apart, so that case is not scored."""
     return STUB_FRAME.format(flaw=case["flaw"], message=case["message"])
 
@@ -756,7 +776,6 @@ def scrub_case(case, literals=()):
 
 # --- The report ------------------------------------------------------------------------------------
 
-CALIBRATION_ARMS = ("original", "stub")
 CALIBRATION_GATE = 0.9
 COVERAGE_GATE = 0.9
 
@@ -776,9 +795,12 @@ def summarize_run(cases, sessions, verdicts, arms, pairs, runs):
     record from one judge model, calibration replies included; arms: arm names in display order;
     pairs: (arm_a, arm_b) comparisons; runs: runs per cell the experiment planned.
 
-    A case is scored only when the judge said "follow-up still needed" for its known-bad reply (the
-    original reply, or the stub). Otherwise the judge cannot tell good from bad on that case, and
-    its cells would be noise.
+    A case is scored only when the judge said "follow-up still needed" for its stub — a reply
+    written to have the flaw. A judge that passes stubs is lenient, and the calibration gate fails.
+    A replay case also needs the judge to fail its original reply: when the judge finds the original
+    clear, the owner's follow-up was probably about something other than wording (impatience,
+    a new need), and the case cannot tell styles apart. That excludes the case but does not count
+    against the judge.
     """
     meta = {c["id"]: c for c in cases}
     by_key = {}
@@ -786,18 +808,28 @@ def summarize_run(cases, sessions, verdicts, arms, pairs, runs):
         by_key[(v["case"], v["arm"], v["run"])] = v
 
     excluded, scored = {}, []
-    caught = 0
+    stubs_graded = stubs_caught = originals_clear = 0
     for case_id in sorted(meta):
-        calibration = next((by_key.get((case_id, arm, 1)) for arm in CALIBRATION_ARMS
-                            if by_key.get((case_id, arm, 1))), None)
-        if calibration is None or calibration.get("verdict") is None:
-            excluded[case_id] = "no graded known-bad reply: the judge is uncalibrated on this case"
-        elif not calibration["verdict"]["follow_up_needed"]:
-            excluded[case_id] = "the judge passed the known-bad reply"
-        else:
-            caught += 1
-            scored.append(case_id)
-    calibrated = caught + sum(1 for r in excluded.values() if r.startswith("the judge passed"))
+        stub = by_key.get((case_id, "stub", 1))
+        if stub is None or stub.get("verdict") is None:
+            excluded[case_id] = "no graded stub: the judge is uncalibrated on this case"
+            continue
+        stubs_graded += 1
+        if not stub["verdict"]["follow_up_needed"]:
+            excluded[case_id] = "the judge passed the stub, a reply written to have the flaw"
+            continue
+        stubs_caught += 1
+        if meta[case_id]["tier"] == "replay":
+            original = by_key.get((case_id, "original", 1))
+            if original is None or original.get("verdict") is None:
+                excluded[case_id] = "the original reply was not graded"
+                continue
+            if not original["verdict"]["follow_up_needed"]:
+                originals_clear += 1
+                excluded[case_id] = ("the judge found the original reply clear: the owner's follow-up was "
+                                     "probably not about its wording")
+                continue
+        scored.append(case_id)
 
     cells = {}
     for arm in arms:
@@ -852,18 +884,20 @@ def summarize_run(cases, sessions, verdicts, arms, pairs, runs):
     graded_cells = sum(1 for arm in arms for w in cells[arm].values() if w is not None)
     planned_cells = len(scored) * len(arms)
     breaches = sum(s["isolation_breach"] for s in session_stats.values())
-    sensitivity = caught / calibrated if calibrated else 0.0
+    sensitivity = stubs_caught / stubs_graded if stubs_graded else 0.0
     gates = [
         {"gate": "isolation", "pass": breaches == 0,
          "detail": f"{breaches} session(s) ran under a style or model other than their arm's"},
-        {"gate": "judge calibration", "pass": calibrated > 0 and sensitivity >= CALIBRATION_GATE,
-         "detail": f"the judge caught {caught} of {calibrated} known-bad replies ({sensitivity:.0%}); needs {CALIBRATION_GATE:.0%}"},
+        {"gate": "judge calibration", "pass": stubs_graded > 0 and sensitivity >= CALIBRATION_GATE,
+         "detail": f"the judge caught {stubs_caught} of {stubs_graded} stubs written to have the flaw "
+                   f"({sensitivity:.0%}); needs {CALIBRATION_GATE:.0%}"},
         {"gate": "coverage", "pass": planned_cells > 0 and graded_cells / planned_cells >= COVERAGE_GATE,
          "detail": f"{graded_cells} of {planned_cells} scored cells graded; needs {COVERAGE_GATE:.0%}"},
     ]
     judge_models = sorted({v.get("judge_model") for v in verdicts if v.get("judge_model")})
     return {"judge_model": judge_models[0] if len(judge_models) == 1 else judge_models, "runs": runs,
             "arms": list(arms), "cases": len(meta), "scored_cases": scored, "excluded": excluded,
+            "originals_judged_clear": originals_clear,
             "gates": gates, "cells": cells, "summary": summary, "pairs": compared, "sessions": session_stats,
             "judge_cost_usd": round(sum(v.get("cost_usd") or 0 for v in verdicts), 2)}
 

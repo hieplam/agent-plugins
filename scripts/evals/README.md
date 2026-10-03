@@ -363,9 +363,10 @@ known-invalid cases.
 
 `barriers/` measures something this harness does not: whether an output style would have spared
 the owner a follow-up they really had to send, replayed from their own Claude Code history. It
-has its own runner because its sessions must never touch a real repo (no shell, every permission
-prompt denied — the opposite of this harness's `bypassPermissions` default) and because it compares
-several style versions on the same cases. See [`barriers/README.md`](barriers/README.md).
+has its own runner for two reasons. Its sessions must never touch a real repo or GitHub: they run
+in `bypassPermissions` mode like this harness, but behind a sandboxed shell with no network, and
+deny rules on file writes under the home folder. And it compares several style versions on the
+same cases. See [`barriers/README.md`](barriers/README.md).
 
 ## Two harness bugs this mode required fixing
 

@@ -4,8 +4,10 @@
     run.py --cases DIR --arms arms.json --memory owner-memory.md --out RUN_DIR [options]
 
 Each session gets a fresh folder holding the case's files (or a snapshot of the repo at the
-case's commit), the owner's memory as project memory, and the arm's output style. It has no shell,
-no web, and no way to approve a permission prompt, so it can touch nothing outside its folder.
+case's commit), the owner's memory as project memory, and the arm's output style. It runs in
+bypassPermissions mode, as the owner does, but its shell is sandboxed (writes only in its folder and
+the temp area, no network) and its file tools may not write under the home folder, so it can change
+nothing real (core.session_settings).
 
 The run is resumable: a cell run whose result file already says `ok` is skipped, so re-running the
 same command after a usage limit picks up where it stopped. A usage limit stops new sessions from
@@ -117,7 +119,10 @@ def run_one(args, case, arm, run, style, memory_text, stop):
         before = edge.file_states(scratch)
         argv = core.build_session_command(args.model, args.effort, args.budget)
         started = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-        proc = edge.run_claude(argv, core.build_session_prompt(case), scratch, args.timeout, core.SESSION_ENV)
+        # The Todd way style writes its pages and review logs under $EXPLAINING_ARTIFACTS: keep them in
+        # the session's own folder, where the sandbox lets it write and copy_written_files finds them.
+        env = dict(core.SESSION_ENV, EXPLAINING_ARTIFACTS=str(scratch / ".artifacts"))
+        proc = edge.run_claude(argv, core.build_session_prompt(case), scratch, args.timeout, env)
         parsed = core.parse_stream(proc["stdout"].splitlines())
         if proc["timed_out"]:
             status, reason = "error", f"killed after {args.timeout}s"

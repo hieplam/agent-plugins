@@ -20,7 +20,7 @@ follow-up — is a *case*.
                                               writes   scrubs secrets)    message, the tool results, the original reply
                                               the flaw)
 cases ── run.py ──── one claude -p session per case × arm × run ── sessions/<case>/<arm>/run-N.json
-      ── stubs.py ── one deliberately flawed reply per reask case ── sessions/<case>/stub/run-1.json
+      ── stubs.py ── one deliberately flawed reply per case ──────── sessions/<case>/stub/run-1.json
       ── judge.py ── one blind judge session per reply ─────────── verdicts/<judge>/<case>/<arm>/run-N.json
       ── report.py ─ gates, win rates, paired comparisons, cost ── report-<judge>.json / .md
       ── ratchet.py  the new report against the committed baseline: REGRESSION / HOLD / IMPROVED
@@ -40,8 +40,8 @@ cases ── run.py ──── one claude -p session per case × arm × run �
 | --- | --- |
 | The session under test sees only the message, the conversation, the tool results and the files (`core.ARM_VISIBLE`). `validate_case` refuses a case whose flaw, or long follow-up, appears in any of them. | The follow-up is the answer key. A session that can read it passes by copying. |
 | Sessions run with `--setting-sources project`, a fresh folder, the owner's memory as project memory, and the arm's style selected in `.claude/settings.json`. `classify_session` rejects a session whose reported style or model is not its arm's (`isolation_breach`). | The owner's real settings select Todd way. Without this, the "no style" arm silently runs Todd way. Verified on 2026-10-03: the no-style session saw neither Part B nor Part C; the before-Part-C session saw Part B only. |
-| Sessions have no shell and no web (`--tools Read,Glob,Grep,Write,Edit,Agent`), and every permission prompt is denied (`--permission-prompts none`). A repo is given as a `git archive` snapshot, with its own `.claude/` and `.mcp.json` removed. | A replayed "pr then merge" must not merge a real PR. The older harness's `bypassPermissions` let eval sessions run git in the owner's real repo (tribe #203). Verified: reads and writes outside the folder are denied, also from a subagent. |
-| Every case is graded twice more: the judge must say "follow-up still needed" for a known-bad reply — the real original reply (replay) or a stub written to have exactly the flaw (reask). A case whose known-bad reply passes is not scored. | A lenient judge passes everything. This is the stub check of the oracle itself. |
+| Sessions run as the owner runs Claude Code — `bypassPermissions` mode, with the shell — behind three walls: the shell runs in Claude Code's sandbox (writes only to its own folder and the temp area), the sandbox denies every network domain, and deny rules stop the file tools (Write, Edit, NotebookEdit) from writing anywhere under the home folder; WebFetch and WebSearch are denied too. A repo is given as a `git archive` snapshot, with its own `.claude/` and `.mcp.json` removed. | A replayed "pr then merge" must not reach a real repo or GitHub. The older harness's `bypassPermissions` *without* these walls let eval sessions run git in the owner's real repo (tribe #203). Verified with live sessions on 2026-10-03: `touch` and the Write and Edit tools inside `~/repos/tribe` were refused, and `curl`, `gh api`, `git ls-remote` and `ssh` to GitHub all failed. Bypass mode is needed because, without it, Claude Code refuses compound shell commands — including the Todd way style's own tool lookup — which the owner never sees in real sessions; the first two pilots, without it, had Todd way replies open with apologies for denied writes. |
+| Every case also gets a *stub*: a reply written to have exactly the flaw the owner reacted to. The judge must say "follow-up still needed" for it; the share of stubs it catches is the calibration gate (90%). A replay case's real original reply is graded too: when the judge finds it clear, the owner's follow-up was probably not about its wording, and the case is left out. | A lenient judge passes everything; the stubs measure that. A weak case cannot tell styles apart; the originals catch that — in the first pilot, the iTerm "done?" case's original said plainly "the commit was blocked, pick 1 or 2", so that follow-up was about the assistant stopping, not its wording. |
 | The judge sees one reply at a time, never an arm name, with `--safe-mode --tools ""` and a JSON schema. | Blind, structured, and unable to wander. |
 | Replay cases come from the 10 sessions Part C was written from, so they are reported *in sample*; the verdict on Part C rests on the out-of-sample (reask) cases. | A rule tested on the cases it was fitted to measures memory, not clarity. |
 | Do not add a case's words to the Todd way dictionary. | Same reason: the dictionary would be fitted to the test. |
@@ -56,10 +56,15 @@ E=~/repos/research/raw/todd-way-barrier-eval
 OUT=$E/runs/<date>-<label>
 python3 run.py    --cases $E/cases --memory $E/owner-memory.md --out $OUT --runs 1 --jobs 3
 python3 stubs.py  --cases $E/cases --out $OUT
-python3 judge.py  --cases $E/cases --out $OUT --model claude-sonnet-5-5
+python3 judge.py  --cases $E/cases --out $OUT --model claude-sonnet-5-5   # the primary judge
+python3 judge.py  --cases $E/cases --out $OUT --model claude-opus-5-5     # a second opinion
 python3 report.py --cases $E/cases --out $OUT --judge claude-sonnet-5-5
 python3 ratchet.py --baseline $E/baseline/report-claude-sonnet-5-5.json --candidate $OUT/report-claude-sonnet-5-5.json --arm todd-way-with-c
 ```
+
+The primary judge is Sonnet 5.5: a different model from the one under test, as in the owner's
+earlier A/B eval. In the first pilot, Sonnet and Opus gave the same verdict on 16 of 20 replies, so a
+conclusion is worth stating only when both judges' reports point the same way.
 
 Every step is resumable: re-running it skips what is already done. A usage limit stops new sessions
 and exits 3; run the same command after the limit resets. `run.py --dry-run` prints the plan and

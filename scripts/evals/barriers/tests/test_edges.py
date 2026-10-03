@@ -66,7 +66,12 @@ class ScratchFolder(unittest.TestCase):
         self.assertFalse((scratch / ".mcp.json").exists())
         self.assertEqual((scratch / "CLAUDE.md").read_text(), "# App memory\nuse bun\n")
         self.assertEqual((scratch / ".claude" / "CLAUDE.md").read_text(), "OWNER MEMORY")
-        self.assertEqual(json.loads((scratch / ".claude" / "settings.json").read_text()), {"outputStyle": "Todd way"})
+        settings = json.loads((scratch / ".claude" / "settings.json").read_text())
+        self.assertEqual(settings["outputStyle"], "Todd way")
+        self.assertTrue(settings["sandbox"]["enabled"])
+        self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
+        self.assertIn(f"Write(/{Path.home()}/**)", settings["permissions"]["deny"])
+        self.assertNotIn("hooks", settings)
         self.assertEqual(sorted(p.name for p in (scratch / ".claude" / "output-styles").iterdir()), ["todd-way.md"])
         self.assertEqual((scratch / "notes" / "PR.md").read_text(), "pr")
 
@@ -74,7 +79,9 @@ class ScratchFolder(unittest.TestCase):
         scratch = self.tmp / "s2"
         scratch.mkdir()
         edge.prepare_scratch(scratch, case_with_workspace(self.commit), None, "m", self.tmp)
-        self.assertEqual(json.loads((scratch / ".claude" / "settings.json").read_text()), {})
+        settings = json.loads((scratch / ".claude" / "settings.json").read_text())
+        self.assertNotIn("outputStyle", settings)
+        self.assertTrue(settings["sandbox"]["enabled"])
         self.assertFalse((scratch / ".claude" / "output-styles").exists())
 
     def test_a_relative_repos_root_typed_from_another_folder_works(self):
@@ -189,6 +196,7 @@ class EndToEnd(unittest.TestCase):
         sessions = [c for c in self.calls() if "--setting-sources" in c["argv"]]
         self.assertEqual(len(sessions), 6)
         self.assertTrue(all(c["prompt"].startswith(("- what does", "This is a working session")) for c in sessions))
+        self.assertTrue(all("--tools" in c["argv"] for c in sessions))
         self.assertFalse(any(Path(c["cwd"]).exists() for c in sessions), "session folders are removed")
 
         again = self.run_sessions()
@@ -197,7 +205,7 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(self.script("stubs.py", *self.common).returncode, 0)
         judged = self.script("judge.py", *self.common, "--model", "judge-x")
         self.assertEqual(judged.returncode, 0, judged.stderr)
-        self.assertIn("8 reply(ies) to grade", judged.stdout)
+        self.assertIn("9 reply(ies) to grade", judged.stdout)
         reported = self.script("report.py", *self.common, "--judge", "judge-x")
         self.assertEqual(reported.returncode, 0, reported.stderr)
         report = json.loads((self.tmp / "run/report-judge-x.json").read_text())

@@ -111,15 +111,22 @@ class SessionPrompt(unittest.TestCase):
 
 class SessionCommand(unittest.TestCase):
     def test_the_session_cannot_reach_outside_its_folder(self):
+        """Bypass mode, as the owner runs it, behind three walls: the sandboxed shell, no network,
+        and no file-tool writes under the home folder."""
         argv = core.build_session_command("claude-opus-5-5", "medium", 5)
-        joined = " ".join(argv)
-        self.assertIn("--tools Read,Glob,Grep,Write,Edit,Agent", joined)
-        self.assertIn("--permission-prompts none", joined)
-        self.assertIn("--setting-sources project", joined)
-        self.assertIn("--no-session-persistence", joined)
-        self.assertNotIn("bypassPermissions", joined)
-        self.assertNotIn("dangerously", joined)
-        self.assertNotIn("Bash", argv[argv.index("--tools") + 1])
+        self.assertEqual(argv[argv.index("--permission-mode") + 1], "bypassPermissions")
+        self.assertEqual(argv[argv.index("--permission-prompts") + 1], "none")
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "project")
+        self.assertIn("--no-session-persistence", argv)
+        settings = core.session_settings("Todd way", "/Users/owner")
+        self.assertEqual(settings["sandbox"]["enabled"], True)
+        self.assertEqual(settings["sandbox"]["allowUnsandboxedCommands"], False)
+        self.assertEqual(settings["sandbox"]["network"], {"allowedDomains": [], "deniedDomains": ["*"]})
+        for tool in ("Write", "Edit", "NotebookEdit"):
+            self.assertIn(f"{tool}(//Users/owner/**)", settings["permissions"]["deny"])
+        self.assertIn("WebFetch", settings["permissions"]["deny"])
+        self.assertEqual(settings["outputStyle"], "Todd way")
+        self.assertNotIn("outputStyle", core.session_settings(None, "/Users/owner"))
 
     def test_model_and_effort_are_pinned(self):
         argv = core.build_session_command("claude-opus-5-5", "medium", 5)
@@ -389,19 +396,31 @@ class Report(unittest.TestCase):
                 "verdict": {"follow_up_needed": needed, "evidence": "", "answers_message": True, "wrong_claims": []},
                 "win": win}
 
-    def test_a_case_whose_known_bad_reply_passes_is_not_scored(self):
-        verdicts = [self.verdict("out-a", "stub", True, False), self.verdict("out-b", "stub", False, True),
-                    self.verdict("in-c", "original", True, False)]
+    def calibration(self, stub_needed=(True, True, True), original_needed=True):
+        verdicts = [self.verdict(c, "stub", n, not n) for c, n in zip(("out-a", "out-b", "in-c"), stub_needed)]
+        return verdicts + [self.verdict("in-c", "original", original_needed, not original_needed)]
+
+    def test_a_case_whose_stub_passes_is_not_scored_and_fails_the_gate(self):
+        verdicts = self.calibration(stub_needed=(True, False, True))
         verdicts += [self.verdict(c, arm, False, True) for c in ("out-a", "out-b", "in-c") for arm in ("plain", "styled")]
         report = core.summarize_run(self.cases, self.sessions, verdicts, ["plain", "styled"], [("styled", "plain")], 1)
         self.assertEqual(report["scored_cases"], ["in-c", "out-a"])
-        self.assertEqual(report["excluded"], {"out-b": "the judge passed the known-bad reply"})
+        self.assertEqual(report["excluded"], {"out-b": "the judge passed the stub, a reply written to have the flaw"})
         calibration = next(g for g in report["gates"] if g["gate"] == "judge calibration")
         self.assertFalse(calibration["pass"])
         self.assertIn("2 of 3", calibration["detail"])
 
+    def test_a_clear_original_excludes_the_case_without_failing_the_gate(self):
+        verdicts = self.calibration(original_needed=False)
+        verdicts += [self.verdict(c, arm, False, True) for c in ("out-a", "out-b", "in-c") for arm in ("plain", "styled")]
+        report = core.summarize_run(self.cases, self.sessions, verdicts, ["plain", "styled"], [], 1)
+        self.assertNotIn("in-c", report["scored_cases"])
+        self.assertIn("original reply clear", report["excluded"]["in-c"])
+        self.assertEqual(report["originals_judged_clear"], 1)
+        self.assertTrue(next(g for g in report["gates"] if g["gate"] == "judge calibration")["pass"])
+
     def test_wins_split_in_and_out_of_sample(self):
-        verdicts = [self.verdict(c, cal, True, False) for c, cal in (("out-a", "stub"), ("out-b", "stub"), ("in-c", "original"))]
+        verdicts = self.calibration()
         verdicts += [self.verdict(c, "styled", False, True) for c in ("out-a", "out-b", "in-c")]
         verdicts += [self.verdict(c, "plain", True, False) for c in ("out-a", "out-b", "in-c")]
         report = core.summarize_run(self.cases, self.sessions, verdicts, ["plain", "styled"], [("styled", "plain")], 1)
@@ -413,7 +432,7 @@ class Report(unittest.TestCase):
         self.assertIn("| styled | 3/3 = 100%", markdown)
         self.assertIn("All gates pass", markdown)
 
-    def test_an_ungraded_calibration_excludes_the_case(self):
+    def test_an_ungraded_stub_excludes_the_case(self):
         verdicts = [self.verdict(c, "plain", False, True) for c in ("out-a", "out-b", "in-c")]
         report = core.summarize_run(self.cases, self.sessions, verdicts, ["plain"], [], 1)
         self.assertEqual(report["scored_cases"], [])

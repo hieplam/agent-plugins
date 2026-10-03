@@ -157,7 +157,8 @@ def snapshot_repo(repos_root, repo, commit, dest):
 
 def prepare_scratch(scratch, case, style, memory_text, repos_root):
     """Lay out one session's folder: the repo snapshot (if any), the case's files, the owner's
-    memory in .claude/CLAUDE.md, and the arm's style selected in .claude/settings.json.
+    memory in .claude/CLAUDE.md, and .claude/settings.json turning on the sandbox and selecting the
+    arm's style.
 
     The snapshot's own .claude/ folder and .mcp.json are removed first: a repo's hooks, settings or
     output style must not steer the session. Its root CLAUDE.md stays, as it would in a real session.
@@ -179,11 +180,10 @@ def prepare_scratch(scratch, case, style, memory_text, repos_root):
     claude_dir = scratch / ".claude"
     claude_dir.mkdir()
     (claude_dir / "CLAUDE.md").write_text(memory_text, encoding="utf-8")
-    settings = {}
     if style:
         (claude_dir / "output-styles").mkdir()
         (claude_dir / "output-styles" / style["file"]).write_text(style["text"], encoding="utf-8")
-        settings["outputStyle"] = style["name"]
+    settings = core.session_settings(style["name"] if style else None, str(Path.home()))
     (claude_dir / "settings.json").write_text(json.dumps(settings) + "\n", encoding="utf-8")
 
 

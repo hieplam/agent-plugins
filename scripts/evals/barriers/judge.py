@@ -8,8 +8,8 @@ The judge is a separate `claude -p` session with no tools and no customization. 
 missing) and ONE reply, never the arm that wrote it. It answers whether the owner would still need
 that follow-up, whether the message is answered, and which claims are wrong.
 
-It also grades each case's calibration reply — the original reply for a replay case, the stub for
-a reask case — which must come out as "follow-up still needed".
+It also grades the calibration replies: every case's stub, which must come out as "follow-up still
+needed", and each replay case's real original reply. report.py explains how each is used.
 
 Verdicts land in RUN_DIR/verdicts/<judge model>/<case>/<arm>/run-<n>.json. Resumable; exit 3 on a
 usage limit.

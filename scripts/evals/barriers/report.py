@@ -36,7 +36,9 @@ def load_records(folder, pattern):
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
     try:
-        cases = edge.load_cases(args.cases)
+        # Report the cases this run folder ran, not every case in the folder: a pilot runs a few.
+        ran = edge.read_json(Path(args.out) / "run.json").get("cases", {})
+        cases = [c for c in edge.load_cases(args.cases) if c["id"] in ran]
         arms = [arm["name"] for arm in edge.load_arms(args.arms)]
         sessions = [s for s in load_records(Path(args.out) / "sessions", "*/*/run-*.json") if s.get("arm") != "stub"]
         verdicts = load_records(Path(args.out) / "verdicts" / args.judge, "*/*/run-*.json")

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Write one deliberately flawed reply (a *stub*) per reask case, to calibrate the judge.
+"""Write one deliberately flawed reply (a *stub*) per case, to calibrate the judge.
 
     stubs.py --cases DIR --out RUN_DIR [--model claude-opus-5-5] [--effort medium] [--jobs 3]
 
-A reask case has no original reply (its transcript is gone), so nothing shows the judge can see the
-case's flaw. The stub supplies that: a plausible reply with exactly the flaw the owner reacted to.
-The judge must say the follow-up is still needed after the stub; when it does not, the case cannot
-tell good replies from bad ones and report.py leaves it out of every score. Replay cases need no
-stub: their original reply is the real thing.
+The stub is a plausible reply with exactly the flaw the owner reacted to. The judge must say the
+follow-up is still needed after the stub; a judge that passes stubs is lenient, and report.py's
+calibration gate fails. A case whose stub passes is left out of every score. (A replay case also
+has its real original reply, which report.py uses to check the case itself.)
 
 Results land in RUN_DIR/sessions/<case>/stub/run-1.json. Resumable; exit 3 on a usage limit.
 """
@@ -67,8 +66,7 @@ def write_stub(args, case, stop):
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
     try:
-        cases = [c for c in edge.load_cases(args.cases, [x for x in args.only_case.split(",") if x])
-                 if c["tier"] == "reask"]
+        cases = edge.load_cases(args.cases, [x for x in args.only_case.split(",") if x])
     except edge.EdgeError as exc:
         print(f"stubs.py: {exc}", file=sys.stderr)
         return 2
