@@ -56,7 +56,7 @@ them.
 
 | Plugin | Kind | What it does |
 | --- | --- | --- |
-| `explaining` | output style, tools | The **Todd way** output style: eval-proven rules for explanatory prose (term discipline, grounding, drawn flows, blind-reader review) folded together with the built-in Concise rules, always on. The skill it replaced is frozen under `archive/skills/explaining/`. |
+| `explaining` | output style, tools | The **Todd way** output style: eval-proven rules for explanatory prose (term discipline, grounding, drawn flows, blind-reader review) plus Simplified Technical English rules with a growing dictionary, folded together with the built-in Concise rules, always on. The skill it replaced is frozen under `archive/skills/explaining/`. |
 
 ### Archived plugins
 
@@ -111,7 +111,7 @@ the file name is the style name unless the frontmatter sets `name:`.
 
 | Style | From | What it does |
 | --- | --- | --- |
-| `Todd way` | `explaining` | Concise on operational replies; on explanatory ones, terms get defined, claims get grounded, multi-actor flows get drawn as validated HTML, and a long draft goes past a blind reader before delivery. Every HTML page wears the Reading design system (book paper, Caslon, full screen width), linked beside the style. Its scripts arrive via the same plugin's `tools/`. |
+| `Todd way` | `explaining` | Concise on operational replies; on explanatory ones, terms get defined, claims get grounded, multi-actor flows get drawn as validated HTML, and a long draft goes past a blind reader before delivery. Every reply follows Simplified Technical English rules (Part C) and a Use/Avoid dictionary that grows from real misreadings. Every HTML page wears the Reading design system (book paper, Caslon, full screen width), linked beside the style. Its scripts arrive via the same plugin's `tools/`. |
 
 Select one with `/config` → **Output style**, or set `"outputStyle": "Todd way"` in a settings
 file. It takes effect after `/clear` or in the next session — the system prompt is read once at

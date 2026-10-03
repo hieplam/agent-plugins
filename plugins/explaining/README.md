@@ -97,6 +97,42 @@ rules 1, 2, 4 and 6; only "short by default" yields, because a definition the re
 not padding, while a preamble still is. `evals/evals.json` measures both ends and the seam
 itself — see below.
 
+**Part C — plain technical English, and a dictionary that grows.** ASD-STE100 (Simplified
+Technical English) is the aerospace standard for text a reader cannot misread. Part C carries
+the parts of it that a sample of the owner's sessions showed would have prevented real
+confusion, and it holds in both registers. It used to live as a separate section of the
+owner's `~/.claude/CLAUDE.md`; it moved here so there is one writing style in one place.
+Two of its rules extend Concise's own rules instead of restating them: A1 gains the status
+line and the "deviation first" warning, and A2 gains "a label always comes with what it
+names". So Concise's six rules are no longer verbatim.
+
+The evidence, from 10 randomly sampled interactive sessions of 2026-09-26 → 2026-10-03
+(165 assistant messages):
+
+| What went wrong | Rule |
+| --- | --- |
+| The owner asked "done?" 8 times in 5 sessions; "done" meant a task check, a plan, or the owner's definition of done | A1 status line, C1, the `done` dictionary row |
+| About 120 bare labels (D1, N5, R2-1, E1, T9), e.g. "N1, N2, N4, N6, S1–S3 are as I told you" | A2 |
+| "Evals" proposed with no definition and their cost (about 72 runs) last in a long message; the owner then asked why they ran and why they cost so much | C2 |
+| A regular merge where the repo rule said squash, reported at the end under "you need to know" | A1 deviation first |
+| "Stage A green (handoffs 0 hits, doctor ok…). Launching." | C3 |
+| "one-card orchestrate-campaign run" | C4 |
+| "works fine with orchestrate-campaign" read as "compatible with" instead of "runs on"; found three planning rounds later | C7 |
+| Vietnamese sessions switching to English mid-way ("Now wire both into scrape.js") | C7 |
+
+Only 12 % of sentences ran past 20 words, so sentence length (C5) is a guard, not the main
+finding.
+
+STE's own dictionary is an allow-list: each approved word has one approved meaning, and an
+unapproved word points to approved words to write instead. Part C's dictionary has the same
+two halves, **Use** and **Avoid**, but it is the owner's, not STE's: it starts with one row
+(`done`, from the evidence above) and grows only from barriers that actually happened. C8 tells
+the model what counts as a barrier and how to ship a row: resolve
+`realpath ~/.claude/output-styles/todd-way.md` to this file in the owner's clone, add the row,
+and land it with a PR. `tests/test_ste_dictionary.py` is the contract that later edit must
+keep: both tables keep their columns, every row carries dated evidence, and a word appears
+once across both tables. No eval case covers Part C yet.
+
 **Tooling discovery.** Being a system-prompt fragment, the style has no relative path back to
 the repo the way a `SKILL.md` does, so its scripts must sit at a path it can name literally.
 That path is `~/.claude/tools/explaining/`, which `install.sh` creates by linking this plugin's
