@@ -448,7 +448,7 @@ Both tables start from what went wrong in real sessions, never from a guess.
 
 | Word | The one meaning | Not for (say instead) | Evidence |
 | --- | --- | --- | --- |
-| done | The user's definition of done: the PR is merged and local main is ready for new work | a task check ("passed"), a plan ("approved"), a PR alone ("merged") | 2026-10-03: the user asked "done?" 8 times in 5 of 10 sampled sessions, after replies such as "T9 passed its Done commands" |
+| done (vi: xong) | The user's definition of done: the PR is merged and local main is ready for new work | a task check ("passed"), a plan ("approved"), a PR alone ("merged") | 2026-10-03: the user asked "done?" 8 times in 5 of 10 sampled sessions, after replies such as "T9 passed its Done commands"; 2026-10-04: the user asked "xong chưa?" right after a reply that opened "Chưa xong: … Waiting on: bạn" — the word is the same in Vietnamese, and a status line that waits on the user must say what the user does in its first line |
 
 #### Avoid
 
