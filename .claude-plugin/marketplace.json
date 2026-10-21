@@ -8,6 +8,11 @@
       "name": "explaining",
       "source": "./plugins/explaining",
       "description": "The \"Todd way\" output style \u2014 explanatory-prose rules proven in an isolated A/B eval (term discipline, grounding, drawn flows, blind-reader review) folded together with the built-in Concise rules into one always-on style, plus the tools/ scripts it invokes. Replaces the skill of the same name, now archived."
+    },
+    {
+      "name": "epic-loop",
+      "source": "./plugins/epic-loop",
+      "description": "Plan and run work bigger than one PR as a GitHub epic of linked issues (sub-issues, \"blocked by\", loop labels), so a loop of fresh agent sessions does it one task per run: plan the epic, run one tick, or drive it with subagents. Ships epic.mjs, which reads and writes the issue graph."
     }
   ]
 }

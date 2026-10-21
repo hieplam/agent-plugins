@@ -18,11 +18,12 @@ The repo is public, so no clone and no auth are needed:
 ```
 /plugin marketplace add hieplam/agent-plugins
 /plugin install explaining@agent-plugins
+/plugin install epic-loop@agent-plugins
 ```
 
 Run those inside a Claude Code session. `explaining@agent-plugins` is
-`<plugin>@<marketplace>` — the marketplace is named `agent-plugins`. Only `explaining` is
-registered there; the archived plugins are symlink-install only (see below).
+`<plugin>@<marketplace>` — the marketplace is named `agent-plugins`. `explaining` and
+`epic-loop` are registered there; the archived plugins are symlink-install only (see below).
 
 ### From a checkout (symlink install)
 
@@ -57,6 +58,7 @@ them.
 | Plugin | Kind | What it does |
 | --- | --- | --- |
 | `explaining` | output style, tools | The **Todd way** output style: eval-proven rules for explanatory prose (term discipline, grounding, drawn flows, blind-reader review) plus Simplified Technical English rules with a growing dictionary, folded together with the built-in Concise rules, always on. The skill it replaced is frozen under `archive/skills/explaining/`. |
+| `epic-loop` | skill, script | Work bigger than one PR runs as a GitHub epic whose issues are linked (sub-issues, "blocked by", loop labels), so a loop of fresh agent sessions does it one task per run. Plans the epic with a Verify block per task and a one-line loop prompt, runs one tick, or drives the epic with subagents; `epic.mjs` reads and writes the issue graph. See [its README](plugins/epic-loop/README.md). |
 
 ### Archived plugins
 

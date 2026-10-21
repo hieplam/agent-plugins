@@ -1,0 +1,250 @@
+{
+  "repo": "o/r",
+  "defaultBranch": "main",
+  "nextNumber": 100,
+  "labels": [
+    "loop:in-progress",
+    "loop:needs-human",
+    "network-access"
+  ],
+  "files": {},
+  "issues": {
+    "46": {
+      "title": "Epic: network access, sign-in and Cloudflare Tunnel",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": null,
+      "children": [
+        47,
+        55
+      ],
+      "blockedBy": [],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "47": {
+      "title": "Phase 1: local network access and phone layout",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 46,
+      "children": [
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54
+      ],
+      "blockedBy": [],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "48": {
+      "title": "L0 - Baseline numbers and the phone overflow check",
+      "body": "",
+      "state": "CLOSED",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "49": {
+      "title": "L1 - Command-line flags --host, --port, --help",
+      "body": "",
+      "state": "CLOSED",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [
+        48
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "50": {
+      "title": "L2 - Listen on the chosen host; network URLs",
+      "body": "",
+      "state": "CLOSED",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [
+        49
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "51": {
+      "title": "L3 - Phone layout preview",
+      "body": "",
+      "state": "CLOSED",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [
+        50
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "52": {
+      "title": "L4 - Owner approval of the phone preview",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access",
+        "loop:needs-human"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [
+        51
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "53": {
+      "title": "L5 - Phone layout in the app",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [
+        52
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "54": {
+      "title": "L6 - Owner acceptance from a real phone",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access",
+        "loop:needs-human"
+      ],
+      "parent": 47,
+      "children": [],
+      "blockedBy": [
+        53
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "55": {
+      "title": "Phase 2: username and password sign-in, Cloudflare Tunnel",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 46,
+      "children": [
+        56,
+        57,
+        58,
+        59
+      ],
+      "blockedBy": [
+        47
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "56": {
+      "title": "R1 - Flags --username, --password",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 55,
+      "children": [],
+      "blockedBy": [
+        54
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "57": {
+      "title": "R2 - Sign-in on the server",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 55,
+      "children": [],
+      "blockedBy": [
+        56
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "58": {
+      "title": "R3 - Sign-in screen preview",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access"
+      ],
+      "parent": 55,
+      "children": [],
+      "blockedBy": [
+        57
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "59": {
+      "title": "R4 - Owner approval of the sign-in preview",
+      "body": "",
+      "state": "OPEN",
+      "labels": [
+        "network-access",
+        "loop:needs-human"
+      ],
+      "parent": 55,
+      "children": [],
+      "blockedBy": [
+        58
+      ],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    }
+  }
+}
