@@ -1,0 +1,5 @@
+{
+  "name": "epic-loop",
+  "description": "Plan and run work bigger than one PR as a GitHub epic whose issues are linked into a graph (sub-issues, \"blocked by\", loop:in-progress / loop:needs-human labels), so a loop of fresh agent sessions can do it one task per run. One skill with three jobs: plan an epic with a Verify block per task and a one-line loop prompt, run one tick of the loop, or drive the epic from a session with subagents. Ships scripts/epic.mjs, which reads and writes the issue graph so no run has to guess.",
+  "version": "0.1.0"
+}

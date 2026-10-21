@@ -1,0 +1,107 @@
+{
+  "skill_name": "epic-loop",
+  "kind": "skill",
+  "oracle": "Tick cases run against a fake GitHub: scripts/epic.mjs loads scripts/tests/fake-gh.mjs instead of the gh CLI (EPIC_LOOP_GH_MODULE) and reads and writes the world in {scratch}/state.json, which starts as a copy of an evals/fixtures/*.json file. A tick case passes when the reply's last line is the JSON of references/tick.md step 7 with the expected result, and the world is unchanged (these cases must not write). Trigger cases are judged on the transcript: whether the Skill tool loads epic-loop, and what the session does next.",
+  "env": {
+    "GH_TOKEN": "invalid-token-so-evals-cannot-touch-real-github",
+    "EPIC_LOOP_GH_MODULE": "{scratch}/.claude/skills/epic-loop/scripts/tests/fake-gh.mjs",
+    "EPIC_LOOP_FAKE_STATE": "{scratch}/state.json",
+    "EPIC_LOOP_NOW": "2026-10-21T12:00:00Z"
+  },
+  "evals": [
+    {
+      "id": 1,
+      "name": "tick-dry-run-names-the-first-ready-task",
+      "prompt": "Run one tick of the epic loop on epic #46 of o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. This is a dry run: report the decision and change nothing.",
+      "expected_output": "The session loads the epic-loop skill, runs `epic.mjs next 46 --dry-run` (with -R o/r or from the repository), and reports that a real run would take #48 (L0, the first task, attempt 1), because every other task is blocked by the chain or waits for the owner. It changes nothing: no claim, label, comment, branch or PR. The reply ends with one JSON line with \"result\":\"DRY_RUN\" and \"issue\":48.",
+      "files": [
+        {
+          "path": "state.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/fresh-epic.json"
+        },
+        {
+          "path": "state.orig.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/fresh-epic.json"
+        }
+      ],
+      "checks": [
+        {
+          "name": "last-line-dry-run-48-and-nothing-written",
+          "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result DRY_RUN --issue 48 --state {scratch}/state.json --orig {scratch}/state.orig.json"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "tick-stops-at-an-owner-gate",
+      "prompt": "Run one tick of the epic loop on epic #46 of o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING.",
+      "expected_output": "The session loads the epic-loop skill and runs `epic.mjs next 46`. The decision is `wait`: L0 to L3 are closed and the next task, #52 (L4, owner approval of the phone preview), carries loop:needs-human. The run takes nothing, approves nothing, comments nothing, and tells the owner that #52 waits for them. The reply ends with one JSON line with \"result\":\"WAITING\".",
+      "files": [
+        {
+          "path": "state.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/owner-gate.json"
+        },
+        {
+          "path": "state.orig.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/owner-gate.json"
+        }
+      ],
+      "checks": [
+        {
+          "name": "last-line-waiting-and-nothing-written",
+          "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result WAITING --state {scratch}/state.json --orig {scratch}/state.orig.json"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "tick-skips-while-a-task-is-in-progress",
+      "prompt": "Run one tick of the epic loop on epic #46 of o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING.",
+      "expected_output": "The session loads the epic-loop skill and runs `epic.mjs next 46`. The decision is `skip`: #49 (L1) has carried loop:in-progress for one hour, which is inside the 6-hour stale window, so another run holds it. The run takes no other task even though nothing else is in progress, releases nothing, and writes nothing. The reply ends with one JSON line with \"result\":\"SKIP\".",
+      "files": [
+        {
+          "path": "state.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/in-progress.json"
+        },
+        {
+          "path": "state.orig.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/in-progress.json"
+        }
+      ],
+      "checks": [
+        {
+          "name": "last-line-skip-and-nothing-written",
+          "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result SKIP --state {scratch}/state.json --orig {scratch}/state.orig.json"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "plan-triggers-on-a-multi-pr-feature",
+      "prompt": "I want to add user accounts to this app: sign-up, login, password reset by email, and an admin page to manage users. Notes become private to their owner. Must have full test, e2e test.",
+      "expected_output": "The Skill tool loads epic-loop before any code is written, because this is clearly more than one PR. The session then follows references/plan.md steps 1 to 3: it treats the work as an epic, shows the draft shape (phases or tasks, one line each: what it delivers, what proves it, what it waits for, with an owner sign-off at the end), and raises the choices that belong to the owner (for example the email provider, how the first admin is created, what happens to existing public notes). The full Verify blocks and the loop prompt belong to the spec and plan that come after the owner answers, so they are not required yet. This checkout has no GitHub remote, so it says so and asks where the epic should live, instead of pretending to create issues or creating a repository. It does NOT start implementing accounts in this turn. A plan written inline without loading the skill fails this case.",
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# Notes\n\nA small notes web app: React + Vite front end, Fastify API, Postgres. Users write notes and tag them.\nNotes are visible to everyone; there are no user accounts yet.\n\n## Run\n\n    docker compose up -d\n    npm ci\n    npm run dev\n"
+        },
+        {
+          "path": "package.json",
+          "content": "{ \"name\": \"notes\", \"private\": true, \"type\": \"module\",\n  \"scripts\": { \"dev\": \"vite\", \"test\": \"vitest run\", \"e2e\": \"playwright test\" },\n  \"dependencies\": { \"fastify\": \"^5.0.0\", \"pg\": \"^8.13.0\", \"react\": \"^19.0.0\" },\n  \"devDependencies\": { \"vite\": \"^7.0.0\", \"vitest\": \"^3.0.0\", \"@playwright/test\": \"^1.50.0\" } }\n"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "no-trigger-on-a-one-line-fix",
+      "prompt": "In README.md the word 'recieve' is misspelled. Fix it.",
+      "expected_output": "The epic-loop skill is NOT loaded: the task is one line in one file. The session fixes the spelling in README.md directly (or, if it may not edit, says exactly which line to change), with no epic, no issues, no plan and no Verify-block ceremony.",
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# Notes\n\nA small notes web app. You will recieve an email when a note is shared.\n"
+        }
+      ]
+    }
+  ]
+}
