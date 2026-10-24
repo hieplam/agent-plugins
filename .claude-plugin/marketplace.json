@@ -12,7 +12,7 @@
     {
       "name": "epic-loop",
       "source": "./plugins/epic-loop",
-      "description": "Plan and run work bigger than one PR as a GitHub epic of linked issues (sub-issues, \"blocked by\", loop labels), so a loop of fresh agent sessions does it one task per run: plan the epic, run one tick, or drive it with subagents. Ships epic.mjs, which reads and writes the issue graph."
+      "description": "Plan and run work bigger than one PR as a GitHub epic of linked issues (sub-issues, \"blocked by\", loop labels), so a loop of fresh agent sessions does it one task per run: plan the epic, run one tick, or drive it with subagents. The owner ratifies the goal once; after that the loop verifies itself and files findings as blocking issues instead of asking. Ships epic.mjs, which reads and writes the issue graph."
     }
   ]
 }

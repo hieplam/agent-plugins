@@ -7,11 +7,12 @@ that does exactly one task and ends.
 
 | Path | What it is |
 | --- | --- |
-| `skills/epic-loop/SKILL.md` | when to load it, the graph contract, the script's commands |
+| `skills/epic-loop/SKILL.md` | when to load it, the approach, the graph contract, the script's commands |
+| `skills/epic-loop/references/goal-loop.md` | **The approach**: ratify the goal once, then a goal-anchored loop runs to done without asking |
 | `skills/epic-loop/references/plan.md` | **Plan**: turn a medium or large task into an epic a loop can run |
 | `skills/epic-loop/references/tick.md` | **Tick**: one run of the loop, at most one task |
 | `skills/epic-loop/references/drive.md` | **Drive**: this session runs `/loop`, one background subagent per task |
-| `skills/epic-loop/scripts/epic.mjs` | reads and writes the graph (`status`, `next`, `claim`, `release`, `check`, `link`, `create`) |
+| `skills/epic-loop/scripts/epic.mjs` | reads and writes the graph (`status`, `next`, `claim`, `release`, `check`, `link`, `unlink`, `create`) |
 | `skills/epic-loop/scripts/tests/` | `node --test` suite against a fake `gh` (no network) |
 | `skills/epic-loop/evals/` | harness cases for `scripts/evals/run_evals.py`, with fake-GitHub fixtures |
 
@@ -20,15 +21,26 @@ that does exactly one task and ends.
 - **Epic** = the parent issue. **Phase** (optional) = a sub-issue of the epic with its own spec and plan.
   **Task** = an issue with no sub-issues: one PR, with its own Verify block (Goal, Red, Green, Stub check, Ratchet).
 - **Order** = GitHub's "blocked by" links, then the sub-issue order. A blocker or label on a phase applies to its tasks.
-- **State** = the issue: closed is done; `loop:in-progress` means a run holds it (one task per epic at a time);
-  `loop:needs-human` marks an owner gate or a stuck task, which no loop takes. Each claim adds a `loop-attempt: <k>`
-  comment; after 3 attempts the task goes to a human.
+- **State** = the issue: closed is done; `loop:in-progress` means a run holds it (one task per tick; a driving
+  session may run independent tasks in parallel with `--parallel`); `loop:needs-human` marks the ratification gate or
+  something only a person has, which no loop takes. Each claim adds a `loop-attempt: <k>` comment; after 3 failed
+  attempts the task goes to a human, but an attempt that filed a real defect (`release --found`) does not count.
 - **Done** = closed by a merged PR that says `Closes #<n>` and has a `## Verify` section with Red, Green and Stub check.
 - **How** to build and ship is the repository's business (its CLAUDE.md), never the skill's or the loop prompt's.
 
 A run's decision comes from `epic.mjs next <epic>`, one JSON line: `take` (claim it, do it, ship it), `skip`
 (another run holds a task), `wait` (an owner gate is next), `blocked` (open blockers outside the epic), or `done`
 (it closes the finished phases and the epic).
+
+## The approach
+
+The owner ratifies a clear, realistic goal once, at the start: outcome rows against a reference they approved,
+each with an oracle, a threshold and a ratchet, plus standing rules and an acceptance bar. After that the loop never
+asks. It verifies itself (a Verify block per task, a coordinator that re-runs Green, a final goal check, an
+acceptance done by an agent), decides by the standing rules, and turns every finding that threatens a goal row into an
+issue that blocks the right task, so the loop keeps going until the goal holds. See
+`skills/epic-loop/references/goal-loop.md`; it was distilled from castraferrum epic 63, which grew from 38 to 67
+issues this way without a single question to the owner after the design was approved.
 
 ## Install
 
@@ -60,7 +72,8 @@ schedule. Give each run a timeout longer than a task takes and shorter than 6 ho
 stale). Each run ends with one JSON line, for example `{"epic":46,"issue":48,"result":"DONE","pr":"...","progress":"1/14 done","note":"..."}`.
 
 **Drive.** "Drive epic #46 until it is done" makes the current session run `/loop`: it checks each finished task
-by machine, then hands the next one to one background subagent.
+by machine, then hands every ready task to its own background subagent (`next --parallel`, `claim --parallel`),
+with isolated lanes.
 
 **Make it the default.** Claude loads a skill when its description matches the task, and the description is written
 to load before planning anything bigger than one PR. To make that a hard rule in every project, add this line to
@@ -73,7 +86,7 @@ Work bigger than one PR (several PRs, phases or sessions): load the epic-loop sk
 ## Tests and evals
 
 ```bash
-# the script, against a fake gh (34 tests, no network, no tokens)
+# the script, against a fake gh (40 tests, no network, no tokens)
 node --test plugins/epic-loop/skills/epic-loop/scripts/tests/epic.test.mjs
 
 # with and without the skill, through the repo harness (spends real tokens)

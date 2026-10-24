@@ -447,3 +447,79 @@ test('bad usage exits 2', () => {
   assert.equal(run(['next'], network()).code, 2);
   assert.equal(run(['claim', 'abc', '-R', REPO], network()).code, 2);
 });
+
+// ---------- the goal-anchored loop: parallel lanes, found issues, rewiring
+
+// An epic whose tasks 3 and 4 depend only on 2: a coordinator may run them side by side.
+const lanes = (over = {}) => world([
+  { n: 1, title: 'Epic' },
+  { n: 2, parent: 1, title: 'T2', ...(over[2] || {}) },
+  { n: 3, parent: 1, title: 'T3', blockedBy: [2], ...(over[3] || {}) },
+  { n: 4, parent: 1, title: 'T4', blockedBy: [2], ...(over[4] || {}) },
+  { n: 5, parent: 1, title: 'T5', blockedBy: [3, 4], ...(over[5] || {}) },
+]);
+
+test('claim --parallel takes a ready task while another task of the epic is in progress', () => {
+  const st = lanes({ 2: { state: 'CLOSED' }, 3: { labels: ['loop:in-progress'] } });
+  assert.equal(run(['claim', '4', '-R', REPO], st).code, 1, 'without --parallel an epic runs one task at a time');
+  const r = run(['claim', '4', '-R', REPO, '--parallel'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { claimed: true, issue: 4, attempt: 1, epic: 1 });
+  assert.ok(issueOf(r, 4).labels.includes('loop:in-progress'));
+  assert.equal(run(['claim', '5', '-R', REPO, '--parallel'], r.state).code, 1, '--parallel never takes a blocked task');
+});
+
+test('next --parallel lists every ready task even while one is in progress', () => {
+  const st = lanes({ 2: { state: 'CLOSED' }, 3: { labels: ['loop:in-progress'], labelEvents: [{ label: 'loop:in-progress', createdAt: hoursAgo(1) }] } });
+  assert.equal(run(['next', '1', '-R', REPO, '--dry-run'], st).json.action, 'skip');
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--parallel'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.action, 'take');
+  assert.equal(r.json.issue, 4);
+  assert.deepEqual(r.json.ready.map((t) => t.issue), [4]);
+  assert.deepEqual(r.json.inProgress, [3]);
+  const all = run(['next', '1', '-R', REPO, '--dry-run', '--parallel'], lanes({ 2: { state: 'CLOSED' } }));
+  assert.deepEqual(all.json.ready.map((t) => t.issue), [3, 4]);
+});
+
+test('release --found files the defect into the epic, makes it block the task, and does not spend an attempt', () => {
+  const st = lanes({ 2: { labels: ['loop:in-progress'], comments: ['loop-attempt: 1', 'loop-attempt: 2', 'loop-attempt: 3'] } });
+  st.issues['9'] = { title: 'Defect found by T2', body: '', state: 'OPEN', labels: [], parent: null, children: [], blockedBy: [], comments: [], labelEvents: [], closedBy: [] };
+  const r = run(['release', '2', '-R', REPO, '--reason', 'Green found a real defect', '--found', '9'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { released: true, issue: 2, needsHuman: false, reopened: false, found: [9] });
+  assert.ok(issueOf(r, 2).blockedBy.includes(9), 'the found issue blocks the task');
+  assert.ok(issueOf(r, 1).children.includes(9), 'the found issue joins the epic, so the loop takes it next');
+  assert.deepEqual(issueOf(r, 2).labels, []);
+  assert.match(issueOf(r, 2).comments.at(-1), /^loop-release: Green found a real defect[\s\S]*^loop-found: #9/m);
+  assert.equal(run(['next', '1', '-R', REPO, '--dry-run'], r.state).json.issue, 9);
+  const after = structuredClone(r.state);
+  after.issues['9'].state = 'CLOSED';
+  const again = run(['claim', '2', '-R', REPO], after);
+  assert.equal(again.code, 0, again.stderr);
+  assert.equal(again.json.attempt, 3, 'the attempt that found #9 is not counted, so the task is not handed to a human');
+});
+
+test('release --found refuses the task itself and an unknown issue', () => {
+  const st = lanes({ 2: { labels: ['loop:in-progress'] } });
+  const self = run(['release', '2', '-R', REPO, '--reason', 'x', '--found', '2'], st);
+  assert.equal(self.code, 2);
+  assert.deepEqual(self.writes, []);
+  assert.equal(run(['release', '2', '-R', REPO, '--reason', 'x', '--found', '77'], st).code, 2);
+});
+
+test('unlink removes "blocked by" links, so the order can follow the real dependencies', () => {
+  const st = lanes();
+  const r = run(['unlink', '4', '-R', REPO, '--blocked-by', '2', '--blocks', '5'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(issueOf(r, 4).blockedBy, []);
+  assert.deepEqual(issueOf(r, 5).blockedBy, [3]);
+  assert.deepEqual(r.json.unlinked, ['#4 is no longer blocked by #2', '#5 is no longer blocked by #4']);
+  assert.equal(run(['unlink', '4', '-R', REPO], st).code, 2, 'unlink needs --blocked-by or --blocks');
+});
+
+test('link is idempotent: an existing "blocked by" link is reported, not an error', () => {
+  const r = run(['link', '3', '-R', REPO, '--blocked-by', '2'], lanes());
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.linked, ['#3 is blocked by #2 (already)']);
+});

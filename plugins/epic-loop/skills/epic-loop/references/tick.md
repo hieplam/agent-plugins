@@ -53,15 +53,23 @@ now waits for a person, so reply `GAVE_UP`). In both cases stop.
 
 - **The issue's Verify block is the contract**: Goal, Red, Green, Stub check, Ratchet.
   - Run Red before you build, and keep its literal output.
-  - If Red does not fail the way the issue says, the plan is wrong about the starting point. Comment the output on the
-    issue, run `E release <n> --reason "Red does not fail as planned: <one line>" --needs-human`, and reply `BLOCKED`.
+  - If Red does not fail the way the issue says, the plan is wrong about the starting point. Open an issue that
+    corrects the plan (literal output, which goal row, the corrected Red), run
+    `E release <n> --reason "Red does not fail as planned: <one line>" --found <new>`, and reply `BLOCKED`.
   - Measure the ratchet number before you build. It may only move in the good direction.
+  - A plan command that no longer fits the tree (a renamed project, a moved file) gets the equivalent command that
+    proves the same goal. Record why in the PR; never weaken what the goal proves.
 - **Stay inside the task.** Never weaken or delete a test so that Green passes.
-- **Something outside the task** (a bug, a broken tool, a wrong doc): do not fix it here. Open an issue for it. If it
-  blocks tasks of this epic, put it in the graph so that it gets fixed first:
-  `E link <new> --parent <epic> --blocks <task,...>`.
-- **Owner gates are not yours to sign.** Approving a preview, accepting a phase and choosing a design belong to the
-  owner, unless the epic's body says the owner delegated that approval.
+- **Something outside the task stands between the code and a goal row** (a red CI, a flaky test, a real bug a check
+  exposed, a broken tool, a wrong doc, a visible defect): do not fix it here, and do not ask anyone. Open an issue with
+  its evidence, the goal row it threatens and its own Verify block, then put it in the graph so it is fixed first:
+  `E link <new> --parent <epic> --blocks <task,...>`. If it stops your own Green, release with
+  `E release <n> --reason "<one line>" --found <new>`: the attempt does not count, and the loop fixes the defect
+  first. A finding that threatens no goal row becomes a follow-up outside the epic (references/goal-loop.md, section 2).
+- **Decisions the spec does not make** are made by the standing rules in the epic's body (references/goal-loop.md,
+  section 4), and recorded where the epic keeps its decision log. Never open an "owner decides" issue.
+- **Gates are not yours to sign.** The only gate is the ratification the epic's body names; a loop never closes it.
+  After it, there is nothing left for the owner to sign: acceptance is a task an agent does.
 - **Subagents and background commands** are fine for this task's own work. Wait for them: nothing of yours may still
   be running when you reply.
 
@@ -83,7 +91,10 @@ Merge nothing whose Green did not match. Push the work to its branch, and commen
 left and what blocks it. Then release the task:
 
 - If a later run can retry it: `E release <n> --reason "<one line>"`.
-- If it needs a decision, access or hardware that only a person has: add `--needs-human`.
+- If you filed the defect that stops it: add `--found <new,...>` (step 4).
+- Only if it needs what only a person has (credentials or a login, hardware the agent cannot reach, spending money,
+  or a ratified goal that proves impossible): add `--needs-human`, and say exactly what the person must do. A design
+  decision, a sign-off or "which way is right" is never that: the standing rules decide it.
 
 ## 7. Last line
 

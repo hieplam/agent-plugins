@@ -1,11 +1,19 @@
 # Plan: turn a medium or large task into an epic a loop can run
 
+Read references/goal-loop.md first: the plan exists so that, after one ratification at the start, the loop can run
+to the goal without asking the owner anything.
+
 You are done when all of these are true:
 
-- The epic and every task exist on GitHub, linked in order, and each task carries its own Verify block.
+- The owner ratified the goal rows, the reference, the standing rules and the acceptance bar (step 3), and the epic
+  body records that ratification.
+- The epic and every task exist on GitHub, linked by their real dependencies, and each task carries its own Verify
+  block naming the goal row it proves.
+- The plan ends with a verify task that re-proves every goal row with one committed tool, and an acceptance task done
+  by an agent.
 - The epic carries a one-line loop prompt.
 - `E status <epic>` shows the order you meant.
-- The owner knows where they come in.
+- The owner knows that ratification is the only place they come in.
 
 `E` stands for `node "<skill dir>/scripts/epic.mjs"`.
 
@@ -31,13 +39,25 @@ Create the epic issue (`gh issue create`) as soon as the work is clear enough to
 
 From then on the state lives in that issue, not in this session: a compaction or a crash loses nothing.
 
-## 3. Let the owner decide what is theirs
+## 3. Ratify: the only time the owner decides
 
 Some choices belong to the owner: look and feel, names, scope, and trade-offs that cost something. Take them to the
-owner before the spec, as options they can see (mockups and examples first, terms after). Show them together with
-the draft shape of the epic, one line per phase and task (what it delivers, what proves it, what it waits for), so
-the owner answers with the whole picture in view. Decide everything else yourself, and say what you decided.
-Approvals that come later in the work, such as a preview or an acceptance test, become tasks of their own (step 4).
+owner before the spec, as options they can see (mockups and examples first, terms after). Show them together with the
+draft shape of the epic, one line per phase and task (what it delivers, what proves it, what it waits for), so the
+owner answers with the whole picture in view. Get all of this ratified in that one pass (references/goal-loop.md,
+section 1):
+
+- **The goal rows:** outcomes a user sees, each against the artifact the owner approves. Each names its oracle, its
+  threshold and its ratchet, and an agent can run it on this machine.
+- **The reference:** if it does not exist yet (a design system, a preview), the first phase makes it, and the owner's
+  approval of it is the one gate task, the last human step.
+- **The standing rules** that will decide what the owner would otherwise be asked (goal-loop.md, section 4). Offer the
+  defaults; the owner may change them.
+- **The acceptance bar and the scope:** what "done" means, and that findings outside the goal rows become follow-ups
+  outside the epic.
+
+Decide everything else yourself, and say what you decided. Do not plan later approvals for the owner (a sign-off
+after each preview, an owner acceptance at the end): after ratification, an agent verifies and accepts.
 
 ## 4. Spec and plan, merged before the issues
 
@@ -60,9 +80,21 @@ Write them where the repository keeps them (for example `docs/specs/<date>-<topi
   A behaviour is checked by an end-to-end run. A performance claim needs a measurement. A feature's Green includes its
   unit tests and its end-to-end tests.
 - **A first task that measures the baseline**, when the plan moves numbers.
-- **Owner gates as tasks of their own**, marked `loop:needs-human` in the plan. Put "Owner approval of the <x>
-  preview" right after each preview task, and "Owner acceptance" at the end of each phase. The loop stops at a gate
-  until the owner closes it.
+- **At most one gate task: the ratification of a reference that the epic itself makes,** marked `loop:needs-human`.
+  It sits right after the task that makes the reference; the loop stops there until the owner closes it. No other
+  task is a gate.
+- **A verify task near the end.** It writes a goal manifest (one entry per goal row: the command and its expected
+  output) and a committed `goal:check` tool that runs them all, then re-runs `E check --dry-run` on every closed task.
+  A goal that fails becomes a fix issue that blocks this task.
+- **An acceptance task at the end, done by an agent.** It covers what the owner would have done:
+  - a committed journey through the real build, at every width and theme the goals name;
+  - device emulation in place of real hardware;
+  - the compare page, with every image opened and judged one by one.
+
+  Each defect becomes an issue that blocks it. It merges only when no defect is open.
+- **The real dependencies only.** Chain a task after another only when it needs that task's output (its files, its
+  screen, its data). Tasks that only touch different areas get `"blockedBy"` on their real prerequisite, so a
+  driving session can run them in parallel.
 
 Merge the docs through the repository's normal PR flow before you create the tasks, because the issues link to the
 files on the default branch.
@@ -111,9 +143,12 @@ again without `--dry-run`. `create` prints `{"epic": <n>, "issues": {"<key>": <n
 
 Update the epic (`gh issue edit <e> --body-file <file>`) so that a person sees the plan at a glance:
 
-- the phases table: phase issue, spec, plan, and the tasks in order, with the owner gates marked;
-- how the state is kept: the labels, the `loop-attempt:` comments, the evidence log;
-- who approves what, and anything the owner delegated (only if they said so);
+- the phases table: phase issue, spec, plan, and the tasks in order, with the one ratification gate marked;
+- **the ratified goal**: the goal rows with their oracles and thresholds, the acceptance bar, and the scope;
+- **the standing rules**, and the sentence "after <the last gate>, the owner is not asked to verify or decide
+  anything; findings become issues that block the task they threaten";
+- how the state is kept: the labels, the `loop-attempt:` and `loop-found:` comments, the evidence log, and the
+  decision log where standing-rule decisions are recorded;
 - a **Loop prompt** section with the suggested settings and this prompt, and nothing more:
 
   ```text
@@ -133,7 +168,8 @@ Update the epic (`gh issue edit <e> --body-file <file>`) so that a person sees t
 
 ## 7. Check, then report
 
-- `E status <e>` shows every task in the order you meant: the first one `ready`, the gates `needs human`.
+- `E status <e>` shows every task in the order you meant: the first one `ready`, and at most the one ratification
+  gate `needs human`. `E next <e> --dry-run --parallel` lists the tasks that can start together.
 - `E next <e> --dry-run` takes the first task.
 - Report to the owner:
   - the epic's link;

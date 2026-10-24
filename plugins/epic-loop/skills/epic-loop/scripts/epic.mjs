@@ -6,14 +6,21 @@
 // is stored locally: every command reads GitHub again, so a fresh session picks up exactly where the last one stopped.
 //
 //   status <epic> [--json]                         every task: done / in progress / needs human / blocked / ready
-//   next <epic> [--dry-run]                        the decision of one run, one JSON line: take | skip | wait | blocked | done
-//                                                  (also closes phases and the epic once all their sub-issues are closed)
-//   claim <task> [--epic <n>] [--note "<text>"]    take a ready task: label loop:in-progress, comment "loop-attempt: <k>"
-//   release <task> --reason "<why>" [--needs-human]  hand it back to the queue, or to a human; reopens it if closed
+//   next <epic> [--dry-run] [--parallel]           the decision of one run, one JSON line: take | skip | wait | blocked | done
+//                                                  (also closes phases and the epic once all their sub-issues are closed);
+//                                                  --parallel: take even while tasks are in progress, and list every ready task
+//   claim <task> [--epic <n>] [--note "<text>"] [--parallel]
+//                                                  take a ready task: label loop:in-progress, comment "loop-attempt: <k>";
+//                                                  --parallel allows it while other tasks of the epic are in progress
+//   release <task> --reason "<why>" [--needs-human] [--found <n,...>]
+//                                                  hand it back to the queue, or to a human; reopens it if closed;
+//                                                  --found: the attempt found defects filed as issues <n,...>: each joins the
+//                                                  epic and blocks the task, and the attempt does not count toward the limit
 //   check <task> [--dry-run] [--evidence <path> --heading "<text>"]
 //                                                  really done? closed by a merged PR whose body has a "## Verify" section
 //                                                  naming Red, Green and Stub; PASS removes the label, closes finished parents
-//   link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>]
+//   link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>]   (an existing link is reported, not an error)
+//   unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>]                remove "blocked by" links (rewire to the real order)
 //   create <manifest.json> [--dry-run]             create an epic, its phases and tasks, and every link (references/plan.md)
 //
 // Options: -R <owner/name> (default: the repository of the current directory), --stale-hours <h> (default 6),
@@ -35,6 +42,7 @@ const STYLE = {
   'loop:needs-human': { color: 'D93F0B', description: 'Waiting for a human: a loop never takes this task' },
 };
 const ATTEMPT = /^loop-(attempt|baseline):/;            // loop-baseline: is what the older loop.js / loop.mjs wrote
+const FOUND = /^loop-found: /m;                         // in a loop-release: comment: the attempt filed real defects
 const GROUP = { done: 'done', 'in-progress': 'in progress', ready: 'ready', blocked: 'blocked', 'needs-human': 'needs human' };
 const NOW = process.env.EPIC_LOOP_NOW ? new Date(process.env.EPIC_LOOP_NOW) : new Date();
 
@@ -160,7 +168,13 @@ function labeledAt(repo, number) {
   return last ? new Date(last.createdAt) : null;
 }
 const hoursSince = (d) => (d ? Math.round(((NOW - d) / 3600e3) * 10) / 10 : null);
-const attemptsOf = (repo, number) => issueQuery(Q_COMMENTS, repo, number).comments.nodes.filter((c) => ATTEMPT.test(c.body)).length;
+// Attempts that ended by filing a real defect (release --found) are not failures of the task, so they do not count.
+function attemptsOf(repo, number) {
+  const bodies = issueQuery(Q_COMMENTS, repo, number).comments.nodes.map((c) => c.body);
+  const tries = bodies.filter((b) => ATTEMPT.test(b)).length;
+  const excused = bodies.filter((b) => b.startsWith('loop-release:') && FOUND.test(b)).length;
+  return Math.max(0, tries - excused);
+}
 
 function counts(tasks) {
   const n = (g) => tasks.filter((t) => t.group === g).length;
@@ -168,18 +182,23 @@ function counts(tasks) {
 }
 
 // The decision of one run. Only `take` lets the run work; every other action ends the run.
-function decide(root, c, { staleHours, closedNow = [] }) {
+function decide(root, c, { staleHours, closedNow = [], parallel = false }) {
   const base = { epic: root.number, counts: counts(c.tasks), closed: closedNow };
   const brief = (t) => ({ issue: t.number, title: t.title, blockedBy: t.openBlockers.map((b) => b.number) });
   if (!root.open && finished(root)) return { action: 'done', ...base };
   if (!c.tasks.length) return { action: 'blocked', reason: `epic #${root.number} has no sub-issues`, ...base };
+  const ready = c.tasks.filter((t) => t.group === 'ready').sort((a, b) => b.unblocks - a.unblocks || a.order - b.order);
+  if (parallel && ready.length) {
+    const t = ready[0];
+    return { action: 'take', issue: t.number, title: t.title, attempt: attemptsOf(t.repo, t.number) + 1, path: [...t.path, t.number],
+      ready: ready.map((x) => ({ issue: x.number, title: x.title })), inProgress: c.holders.map((h) => h.number), ...base };
+  }
   if (c.holders.length) {
     const h = c.holders[0];
     const since = labeledAt(h.repo, h.number);
     const hours = hoursSince(since);
     return { action: 'skip', reason: 'in progress', issue: h.number, title: h.title, since: since?.toISOString() ?? null, hours, stale: hours !== null && hours > staleHours, ...base };
   }
-  const ready = c.tasks.filter((t) => t.group === 'ready').sort((a, b) => b.unblocks - a.unblocks || a.order - b.order);
   if (ready.length) {
     const t = ready[0];
     return { action: 'take', issue: t.number, title: t.title, attempt: attemptsOf(t.repo, t.number) + 1, path: [...t.path, t.number], ...base };
@@ -218,7 +237,12 @@ function issueId(repo, n) {
   return idCache.get(k);
 }
 const addSubIssue = (repo, parent, child) => gh(['api', '-X', 'POST', `repos/${repo}/issues/${parent}/sub_issues`, '-F', `sub_issue_id=${issueId(repo, child)}`]);
-const addBlockedBy = (repo, n, blocker) => gh(['api', '-X', 'POST', `repos/${repo}/issues/${n}/dependencies/blocked_by`, '-F', `issue_id=${issueId(repo, blocker)}`]);
+// Returns false when the link already existed (GitHub answers 422 "already been taken").
+function addBlockedBy(repo, n, blocker) {
+  try { gh(['api', '-X', 'POST', `repos/${repo}/issues/${n}/dependencies/blocked_by`, '-F', `issue_id=${issueId(repo, blocker)}`]); return true; }
+  catch (e) { if (/already been taken/i.test(e.message)) return false; throw e; }
+}
+const removeBlockedBy = (repo, n, blocker) => gh(['api', '-X', 'DELETE', `repos/${repo}/issues/${n}/dependencies/blocked_by/${issueId(repo, blocker)}`]);
 
 // Close every parent under (and including) `root` whose sub-issues are all finished.
 function sweep(root) {
@@ -304,7 +328,7 @@ function cmdNext(repo, n, flags) {
   const root = loadTree(repo, n);
   const c = classify(root);
   const closedNow = flags['dry-run'] ? [] : sweep(root);
-  console.log(JSON.stringify(decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow })));
+  console.log(JSON.stringify(decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow, parallel: Boolean(flags.parallel) })));
 }
 
 function cmdClaim(repo, n, flags) {
@@ -317,7 +341,7 @@ function cmdClaim(repo, n, flags) {
     throw new Refused(isParent ? `#${n} is not a task: it has sub-issues` : `#${n} is not under epic #${root.number}`);
   }
   const other = c.holders.find((h) => keyOf(h) !== keyOf(t));
-  if (other) throw new Refused(`#${other.number} is in progress; an epic runs one task at a time`);
+  if (other && !flags.parallel) throw new Refused(`#${other.number} is in progress; an epic runs one task at a time (--parallel runs lanes side by side)`);
   if (t.group === 'blocked') throw new Refused(`#${n} is blocked (by ${t.openBlockers.map((b) => fmt(b, repo)).join(', ')})`);
   if (t.group === 'needs-human') throw new Refused(`#${n} needs human: a loop never takes it`);
   if (t.group === 'in-progress') throw new Refused(`#${n} is in progress already`);
@@ -339,14 +363,22 @@ function cmdClaim(repo, n, flags) {
 
 function cmdRelease(repo, n, flags) {
   if (!flags.reason) throw new Usage('release needs --reason "<why>"');
+  const found = flags.found.map((v) => num(v, '--found <n>'));
+  if (found.includes(n)) throw new Usage(`--found names #${n} itself`);
+  const parents = found.map((f) => issueQuery(Q_PARENT, repo, f).parent);   // also proves each found issue exists
   const info = issueQuery(Q_CLOSING, repo, n);
   const reopened = info.state !== 'OPEN';
   if (reopened) gh(['issue', 'reopen', String(n), '-R', repo]);
   for (const l of info.labels.nodes.map((x) => x.name).filter((x) => WORK_SEEN.includes(x))) gh(['issue', 'edit', String(n), '-R', repo, '--remove-label', l]);
   let label = null;
   if (flags['needs-human']) { label = ensureLabel(repo, HUMAN); gh(['issue', 'edit', String(n), '-R', repo, '--add-label', label]); }
-  comment(repo, n, `loop-release: ${flags.reason}\n\n${label ? `Waiting for a human (\`${label}\`): a loop will not take this task until that label is removed.` : 'Back in the queue: the next run can take it again.'}`);
-  console.log(JSON.stringify({ released: true, issue: n, needsHuman: Boolean(label), reopened }));
+  if (found.length) {
+    const epic = topAncestor(repo, n);
+    found.forEach((f, i) => { if (!parents[i] && !(epic.repo === repo && epic.number === n)) addSubIssue(repo, epic.number, f); addBlockedBy(repo, n, f); });
+  }
+  const foundLine = found.length ? `loop-found: ${found.map((f) => `#${f}`).join(', ')} (each now blocks this task; this attempt does not count toward the attempt limit)\n\n` : '';
+  comment(repo, n, `loop-release: ${flags.reason}\n\n${foundLine}${label ? `Waiting for a human (\`${label}\`): a loop will not take this task until that label is removed.` : 'Back in the queue: the next run can take it again.'}`);
+  console.log(JSON.stringify({ released: true, issue: n, needsHuman: Boolean(label), reopened, ...(found.length ? { found } : {}) }));
 }
 
 function verifySection(body) {
@@ -401,9 +433,18 @@ function cmdLink(repo, n, flags) {
   if (!flags.parent && !flags['blocked-by'].length && !flags.blocks.length) throw new Usage('link needs --parent, --blocked-by or --blocks');
   const linked = [];
   if (flags.parent) { addSubIssue(repo, num(flags.parent, '--parent <n>'), n); linked.push(`#${n} is a sub-issue of #${flags.parent}`); }
-  for (const b of flags['blocked-by']) { addBlockedBy(repo, n, num(b, '--blocked-by <n>')); linked.push(`#${n} is blocked by #${b}`); }
-  for (const x of flags.blocks) { addBlockedBy(repo, num(x, '--blocks <n>'), n); linked.push(`#${x} is blocked by #${n}`); }
+  const already = (added) => (added ? '' : ' (already)');
+  for (const b of flags['blocked-by']) linked.push(`#${n} is blocked by #${b}${already(addBlockedBy(repo, n, num(b, '--blocked-by <n>')))}`);
+  for (const x of flags.blocks) linked.push(`#${x} is blocked by #${n}${already(addBlockedBy(repo, num(x, '--blocks <n>'), n))}`);
   console.log(JSON.stringify({ linked }));
+}
+
+function cmdUnlink(repo, n, flags) {
+  if (!flags['blocked-by'].length && !flags.blocks.length) throw new Usage('unlink needs --blocked-by or --blocks');
+  const unlinked = [];
+  for (const b of flags['blocked-by']) { removeBlockedBy(repo, n, num(b, '--blocked-by <n>')); unlinked.push(`#${n} is no longer blocked by #${b}`); }
+  for (const x of flags.blocks) { removeBlockedBy(repo, num(x, '--blocks <n>'), n); unlinked.push(`#${x} is no longer blocked by #${n}`); }
+  console.log(JSON.stringify({ unlinked }));
 }
 
 // The copy of one plan section: from its heading ("## L0 - Title") up to the next heading of the same or a higher level.
@@ -519,7 +560,7 @@ function num(v, what) {
 }
 
 function parse(argv) {
-  const flags = { 'blocked-by': [], blocks: [] };
+  const flags = { 'blocked-by': [], blocks: [], found: [] };
   const pos = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -527,19 +568,20 @@ function parse(argv) {
     if (!a.startsWith('--')) { pos.push(a); continue; }
     const eq = a.indexOf('=');
     const name = eq > 0 ? a.slice(2, eq) : a.slice(2);
-    if (['dry-run', 'json', 'needs-human'].includes(name)) { flags[name] = true; continue; }
+    if (['dry-run', 'json', 'needs-human', 'parallel'].includes(name)) { flags[name] = true; continue; }
     const value = eq > 0 ? a.slice(eq + 1) : argv[++i];
     if (value === undefined) throw new Usage(`--${name} needs a value`);
-    if (name === 'blocked-by' || name === 'blocks') flags[name].push(...value.split(',').map((v) => v.trim()).filter(Boolean));
+    if (name === 'blocked-by' || name === 'blocks' || name === 'found') flags[name].push(...value.split(',').map((v) => v.trim()).filter(Boolean));
     else flags[name] = value;
   }
   if (flags.repo !== undefined && !/^[\w.-]+\/[\w.-]+$/.test(flags.repo)) throw new Usage(`-R needs owner/name, got ${flags.repo}`);
   return { flags, pos };
 }
 
-const USAGE = 'usage: epic.mjs status <epic> [--json] | next <epic> [--dry-run] | claim <task> [--epic <n>] [--note "..."] | ' +
-  'release <task> --reason "..." [--needs-human] | check <task> [--dry-run] [--evidence <path> --heading "..."] | ' +
-  'link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>] | create <manifest.json> [--dry-run]   (options: -R owner/name, --stale-hours, --max-attempts)';
+const USAGE = 'usage: epic.mjs status <epic> [--json] | next <epic> [--dry-run] [--parallel] | claim <task> [--epic <n>] [--note "..."] [--parallel] | ' +
+  'release <task> --reason "..." [--needs-human] [--found <n,...>] | check <task> [--dry-run] [--evidence <path> --heading "..."] | ' +
+  'link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>] | unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>] | ' +
+  'create <manifest.json> [--dry-run]   (options: -R owner/name, --stale-hours, --max-attempts)';
 
 try {
   const { flags, pos } = parse(process.argv.slice(2));
@@ -552,6 +594,7 @@ try {
     case 'release': { const n = num(arg, 'a task number'); cmdRelease(repo(), n, flags); break; }
     case 'check': { const n = num(arg, 'a task number'); cmdCheck(repo(), n, flags); break; }
     case 'link': { const n = num(arg, 'an issue number'); cmdLink(repo(), n, flags); break; }
+    case 'unlink': { const n = num(arg, 'an issue number'); cmdUnlink(repo(), n, flags); break; }
     case 'create': { if (!arg) throw new Usage('create needs a manifest file'); cmdCreate(arg, flags); break; }
     default: throw new Usage(USAGE);
   }

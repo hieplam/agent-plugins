@@ -84,8 +84,16 @@ function api(s, args) {
   if ((m = /^repos\/([^/]+\/[^/]+)\/issues\/(\d+)\/dependencies\/blocked_by$/.exec(path)) && method === 'POST') {
     const blocker = byId(s, opt(args, '-F').split('=')[1]);
     const i = issue(s, m[2]);
-    i.blockedBy = [...new Set([...(i.blockedBy || []), blocker])];
+    if ((i.blockedBy || []).includes(blocker)) fail('gh: Validation failed: Target issue has already been taken (HTTP 422)');
+    i.blockedBy = [...(i.blockedBy || []), blocker];
     return JSON.stringify({ id: id(m[2]), number: Number(m[2]) });
+  }
+  if ((m = /^repos\/([^/]+\/[^/]+)\/issues\/(\d+)\/dependencies\/blocked_by\/(\d+)$/.exec(path)) && method === 'DELETE') {
+    const blocker = byId(s, m[3]);
+    const i = issue(s, m[2]);
+    if (!(i.blockedBy || []).includes(blocker)) fail('HTTP 404: Not Found');
+    i.blockedBy = i.blockedBy.filter((b) => b !== blocker);
+    return '';
   }
   if ((m = /^repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(path)) && method === 'GET') {
     issue(s, m[2]);
