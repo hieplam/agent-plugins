@@ -30,3 +30,13 @@ test('check-tick --no-query passes when the log has only other queries, or none'
   assert.equal(check(`${LINE('Comments')}\n${LINE('EpicNodes')}\n`, ['--no-query', 'EpicNode']).code, 0);
   assert.equal(check('', ['--no-query', 'EpicNode']).code, 0);
 });
+
+test('check-tick --pr requires the pr field of the last line to equal the url', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'check-tick-test-'));
+  writeFileSync(join(dir, 'reply.txt'), ['The PR is open.', '{"epic":46,"issue":49,"result":"PR_OPEN","pr":"https://github.com/o/r/pull/7","resource":null,"progress":null,"note":"x"}', ''].join('\n'));
+  const run = (url) => spawnSync(process.execPath, [CHECK, '--reply', join(dir, 'reply.txt'), '--result', 'PR_OPEN', '--issue', '49', '--pr', url], { encoding: 'utf8' });
+  assert.equal(run('https://github.com/o/r/pull/7').status, 0);
+  const bad = run('https://github.com/o/r/pull/8');
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /pr is/);
+});

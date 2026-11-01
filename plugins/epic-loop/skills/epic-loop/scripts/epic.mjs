@@ -22,9 +22,11 @@
 //                                                  --excused: add a "loop-excused: <reason>" line; the attempt does not count either;
 //                                                  --if-claimed: do nothing (print {"released":false}) when the task carries no
 //                                                  work label; --reason is optional with --excused or --if-claimed
-//   check <task> [--dry-run] [--evidence <path> --heading "<text>"]
+//   check <task> [--dry-run] [--gate] [--evidence <path> --heading "<text>"]
 //                                                  really done? closed by a merged PR whose body has a "## Verify" section
-//                                                  naming Red, Green and Stub; PASS removes the label, closes finished parents
+//                                                  naming Red, Green and Stub; PASS removes the label, closes finished parents;
+//                                                  the status castraferrum/gate of the PR head: failure always fails, --gate
+//                                                  also fails when it is not success; no flag and no status: as before
 //   link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>]   (an existing link is reported, not an error)
 //   unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>]                remove "blocked by" links (rewire to the real order)
 //   create <manifest.json> [--dry-run]             create an epic, its phases and tasks, and every link (references/plan.md)
@@ -104,7 +106,7 @@ const Q_COMMENTS = `query Comments($owner: String!, $name: String!, $number: Int
   issue(number: $number) { comments(last: 100) { nodes { body } } } } }`;
 const Q_CLOSING = `query Closing($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { number state labels(first: 50) { nodes { name } }
-    closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number url merged title body } } } } }`;
+    closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number url merged title body headRefOid } } } } }`;
 
 function issueQuery(query, repo, number) {
   const [owner, name] = repo.split('/');
@@ -424,6 +426,16 @@ function fileOnDefaultBranch(repo, path) {
   } catch { return null; }
 }
 
+// The state of the status `castraferrum/gate` on a commit (set by the gate of Castraferrum), or null if there is none.
+const GATE_CONTEXT = 'castraferrum/gate';
+function gateStatus(repo, sha) {
+  if (!sha) return null;
+  try {
+    const list = JSON.parse(gh(['api', `repos/${repo}/commits/${sha}/status`])).statuses || [];
+    return list.find((s) => s.context === GATE_CONTEXT)?.state ?? null;
+  } catch { return null; }
+}
+
 function cmdCheck(repo, n, flags) {
   if (flags.evidence && !flags.heading) throw new Usage('--evidence needs --heading "<text>"');
   const info = issueQuery(Q_CLOSING, repo, n);
@@ -435,6 +447,10 @@ function cmdCheck(repo, n, flags) {
     const v = verifySection(pr.body);
     if (v === null) fails.push(`PR #${pr.number} has no "## Verify" section`);
     else for (const w of ['Red', 'Green', 'Stub']) if (!new RegExp(`\\b${w}\\b`, 'i').test(v)) fails.push(`PR #${pr.number}: its Verify section does not mention ${w}`);
+    // The gate status: a failure always fails; --gate wants a success. With no flag and no status, nothing changes.
+    const gate = gateStatus(repo, pr.headRefOid);
+    if (gate === 'failure' || gate === 'error') fails.push(`PR #${pr.number}: the status ${GATE_CONTEXT} of its head is ${gate}`);
+    else if (flags.gate && gate !== 'success') fails.push(`PR #${pr.number}: its head has no status ${GATE_CONTEXT} with state success (--gate)`);
   }
   if (flags.evidence) {
     const text = fileOnDefaultBranch(repo, flags.evidence);
@@ -595,7 +611,7 @@ function parse(argv) {
     if (!a.startsWith('--')) { pos.push(a); continue; }
     const eq = a.indexOf('=');
     const name = eq > 0 ? a.slice(2, eq) : a.slice(2);
-    if (['dry-run', 'json', 'needs-human', 'parallel', 'probe', 'if-claimed', 'excused'].includes(name)) { flags[name] = true; continue; }
+    if (['dry-run', 'json', 'needs-human', 'parallel', 'probe', 'if-claimed', 'excused', 'gate'].includes(name)) { flags[name] = true; continue; }
     const value = eq > 0 ? a.slice(eq + 1) : argv[++i];
     if (value === undefined) throw new Usage(`--${name} needs a value`);
     if (name === 'blocked-by' || name === 'blocks' || name === 'found') flags[name].push(...value.split(',').map((v) => v.trim()).filter(Boolean));
@@ -606,7 +622,7 @@ function parse(argv) {
 }
 
 const USAGE = 'usage: epic.mjs status <epic> [--json] | next <epic> [--dry-run] [--parallel] [--probe] | claim <task> [--epic <n>] [--note "..."] [--parallel] | ' +
-  'release <task> --reason "..." [--needs-human] [--found <n,...>] [--if-claimed] [--excused] | check <task> [--dry-run] [--evidence <path> --heading "..."] | ' +
+  'release <task> --reason "..." [--needs-human] [--found <n,...>] [--if-claimed] [--excused] | check <task> [--dry-run] [--gate] [--evidence <path> --heading "..."] | ' +
   'link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>] | unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>] | ' +
   'create <manifest.json> [--dry-run]   (options: -R owner/name, --stale-hours, --max-attempts)';
 
