@@ -1,0 +1,91 @@
+{
+  "v": 1,
+  "files": {
+    "references/tick.md": "9f80c061798851c9495501db5c17e92dbcba2923d03270ed4211ca5d2321542e",
+    "references/drive.md": "e9d20b21c64a23a8bd45ff3e4b7392eb5b03ab428db463534969bce77515daa4"
+  },
+  "runs": 5,
+  "cases": {
+    "1": {
+      "baseline": [
+        3,
+        5
+      ],
+      "candidate": [
+        2,
+        5
+      ]
+    },
+    "2": {
+      "baseline": [
+        4,
+        5
+      ],
+      "candidate": [
+        3,
+        5
+      ]
+    },
+    "3": {
+      "baseline": [
+        2,
+        5
+      ],
+      "candidate": [
+        3,
+        5
+      ]
+    },
+    "4": {
+      "baseline": [
+        0,
+        5
+      ],
+      "candidate": [
+        0,
+        5
+      ]
+    },
+    "5": {
+      "baseline": [
+        5,
+        5
+      ],
+      "candidate": [
+        5,
+        5
+      ]
+    },
+    "6": {
+      "baseline": [
+        5,
+        5
+      ],
+      "candidate": [
+        5,
+        5
+      ]
+    },
+    "7": {
+      "baseline": [
+        5,
+        5
+      ],
+      "candidate": [
+        4,
+        5
+      ]
+    }
+  },
+  "pooled": {
+    "baseline": [
+      24,
+      35
+    ],
+    "candidate": [
+      22,
+      35
+    ]
+  },
+  "verdict": "pass"
+}
