@@ -129,6 +129,35 @@
           "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result BLOCKED --issue 49 --state {scratch}/state.json --orig {scratch}/state.orig.json --calls {scratch}/calls.log --no-query EpicNode"
         }
       ]
+    },
+    {
+      "id": 7,
+      "name": "gate-mode-ends-at-pr-open-with-no-wait",
+      "env": {
+        "CASTRAFERRUM_GATE": "1"
+      },
+      "prompt": "[Castraferrum] The console claimed task 49 for this run (action take). Do not run next or claim. Do this task only.\n\nThe epic is #46 of o/r, and you use the epic-loop skill. Read references/tick.md of the skill first. This is a test of gate mode: the work on task 49 is finished, https://github.com/o/r/pull/7 is open, and nothing is left to build. End the run as tick.md says for this case. Change nothing else, and end with the JSON line of tick.md step 7 as plain text and not in a code fence.",
+      "expected_output": "The session reads references/tick.md and ends the run at once, because the PR is open and gate mode leaves the rest to the console. The reply ends with one plain JSON line (no code fence) with \"result\":\"PR_OPEN\", \"issue\":49 and \"pr\":\"https://github.com/o/r/pull/7\". The transcript shows no `gh pr checks`, no wait for checks, no `gh pr merge`, no `epic.mjs check`, no `epic.mjs next`, no `epic.mjs claim`, and no release of the task.",
+      "files": [
+        {
+          "path": "state.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/in-progress.json"
+        },
+        {
+          "path": "state.orig.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/in-progress.json"
+        },
+        {
+          "path": "calls.log",
+          "content": ""
+        }
+      ],
+      "checks": [
+        {
+          "name": "last-line-pr-open-49-with-the-pr-url-and-nothing-written",
+          "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result PR_OPEN --issue 49 --pr https://github.com/o/r/pull/7 --state {scratch}/state.json --orig {scratch}/state.orig.json --calls {scratch}/calls.log --no-query EpicNode"
+        }
+      ]
     }
   ]
 }

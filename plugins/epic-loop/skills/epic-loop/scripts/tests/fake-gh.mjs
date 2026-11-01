@@ -7,7 +7,8 @@
 //   { repo, defaultBranch, nextNumber, labels: [name], files: { path: text },
 //     issues: { "<n>": { title, body, state: "OPEN"|"CLOSED", labels: [name], parent: n|null, children: [n],
 //                       blockedBy: [n], comments: [body], labelEvents: [{ label, createdAt, type? }],
-//                       closedBy: [{ number, url, merged, title, body }] } } }
+//                       closedBy: [{ number, url, merged, title, body, headRefOid? }] } },
+//     statuses: { "<sha>": [{ context, state }] } }
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
 const STATE = process.env.EPIC_LOOP_FAKE_STATE;
@@ -98,6 +99,9 @@ function api(s, args) {
   if ((m = /^repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(path)) && method === 'GET') {
     issue(s, m[2]);
     return JSON.stringify({ id: id(m[2]), number: Number(m[2]) });
+  }
+  if ((m = /^repos\/([^/]+\/[^/]+)\/commits\/([0-9a-f]+)\/status$/.exec(path)) && method === 'GET') {
+    return JSON.stringify({ sha: m[2], statuses: (s.statuses || {})[m[2]] || [] });
   }
   if ((m = /^repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(path)) && method === 'GET') {
     const text = (s.files || {})[m[2]];

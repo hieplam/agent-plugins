@@ -330,6 +330,37 @@ test('check --evidence requires the heading in the evidence log on the default b
   assert.match(r.stdout, /no "## L1" heading/);
 });
 
+// check reads the status `castraferrum/gate` of the PR head (the gate of Castraferrum sets it).
+const SHA = 'abc1234def5678abc1234def5678abc1234def56';
+const withSha = (over = {}) => ({ state: 'CLOSED', closedBy: [{ ...mergedPr()[0], headRefOid: SHA }], ...over });
+const gateStatus = (state) => ({ files: {}, statuses: { [SHA]: [{ context: 'castraferrum/gate', state }, { context: 'ci/other', state: 'success' }] } });
+
+test('check --gate passes when the PR head has the status castraferrum/gate: success', () => {
+  const r = run(['check', '48', '-R', REPO, '--dry-run', '--gate'], { ...network({ 48: withSha() }), ...gateStatus('success') });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /PASS #48/);
+});
+
+test('check fails on the status castraferrum/gate: failure, with or without --gate', () => {
+  for (const extra of [[], ['--gate']]) {
+    const r = run(['check', '48', '-R', REPO, '--dry-run', ...extra], { ...network({ 48: withSha() }), ...gateStatus('failure') });
+    assert.equal(r.code, 1, r.stdout);
+    assert.match(r.stdout, /castraferrum\/gate.*failure/);
+  }
+});
+
+test('check --gate fails when the PR head has no status castraferrum/gate', () => {
+  const r = run(['check', '48', '-R', REPO, '--dry-run', '--gate'], { ...network({ 48: withSha() }), files: {}, statuses: { [SHA]: [{ context: 'ci/other', state: 'success' }] } });
+  assert.equal(r.code, 1, r.stdout);
+  assert.match(r.stdout, /no status castraferrum\/gate/);
+});
+
+test('check with no flag and no status passes, as before', () => {
+  const r = run(['check', '48', '-R', REPO, '--dry-run'], { ...network({ 48: withSha() }), files: {} });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /PASS #48/);
+});
+
 // ---------- link
 
 test('link adds an issue found mid-loop to the epic and makes it block the affected tasks', () => {

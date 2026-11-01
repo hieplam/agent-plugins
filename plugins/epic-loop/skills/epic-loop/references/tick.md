@@ -93,6 +93,9 @@ now waits for a person, so reply `GAVE_UP`). In both cases stop.
   `--evidence <log> --heading "## <task id>"`.
   - PASS removes the label, and closes a phase or the epic that has just finished.
   - FAIL lists what is missing. Fix it (edit the PR body, add the evidence) and run `check` again.
+- **Gate mode.** If the environment variable `CASTRAFERRUM_GATE` is `1`, the console merges the PR, not you. Once the
+  PR is open, reply `PR_OPEN` with the PR link in `pr`. Do not run `gh pr checks`, do not wait, do not merge, do not
+  run `E check`, and do not release the task. The console does these. With no variable, ignore this bullet.
 - If the repository leaves the merge to a person, do not wait for it. Once the PR is open and green, run
   `E release <n> --reason "PR #<m> waits for review" --needs-human` and reply `DONE` with the PR link. The loop
   then waits at this task, and the issue closes itself when they merge the PR.
@@ -103,6 +106,9 @@ Merge nothing whose Green did not match. Push the work to its branch, and commen
 left and what blocks it. Then release the task:
 
 - If a later run can retry it: `E release <n> --reason "<one line>"`.
+- In console mode, if a resource the task needs is down (a database, a port, a service that a check names), do not
+  retry. Reply `RESOURCE_DOWN` and put the resource name in `resource`. The console releases the task as excused and
+  holds the resource.
 - If you filed the defect that stops it: add `--found <new,...>` (step 4).
 - Only if it needs what only a person has (credentials or a login, hardware the agent cannot reach, spending money,
   or a ratified goal that proves impossible): add `--needs-human`, and say exactly what the person must do. A design
@@ -110,10 +116,14 @@ left and what blocks it. Then release the task:
 
 ## 7. Last line
 
-End your reply with exactly one JSON line. Castraferrum shows it as the run's summary. Write the line as plain text,
-not inside a code fence: the console reads the last non-empty line of the reply, and a closing fence would be that line.
+End your reply with exactly one JSON line. Castraferrum shows it as the run's summary, and reads it from the result
+text of the run, not from the summary. Write the line as plain text, not inside a code fence: the console reads the
+last non-empty line of the reply, and a closing fence would be that line.
 
-    {"epic":<e>,"issue":<n or null>,"result":"DONE|SKIP|WAITING|BLOCKED|GAVE_UP|RELEASED|EPIC_DONE|DRY_RUN","pr":"<url or null>","progress":"<done>/<total> done","note":"<one sentence>"}
+    {"epic":<e>,"issue":<n or null>,"result":"DONE|SKIP|WAITING|BLOCKED|GAVE_UP|RELEASED|EPIC_DONE|DRY_RUN|PR_OPEN|RESOURCE_DOWN","pr":"<url or null>","resource":"<name or null>","progress":"<done>/<total> done","note":"<one sentence>"}
+
+`PR_OPEN` is the end of a run in gate mode (step 5); `pr` holds the link. `RESOURCE_DOWN` is for console mode (step 6);
+`resource` holds the name. In every other result, `resource` is `null`.
 
 `progress` is the epic's state when you reply: `counts.done` and `counts.total` from `next`, plus the task this run
 closed, if any.

@@ -3,7 +3,8 @@
 // --calls <log> --no-query <name>: the log of the fake gh (EPIC_LOOP_FAKE_LOG) must hold no GraphQL "query <name>", which
 // shows that the run did not read the part of the graph it was told to skip.
 // Usage: node check-tick.mjs --reply <file> --result <RESULT> [--issue <n>|null] [--state <file> --orig <file>]
-//                            [--calls <log> --no-query <name>]
+//                            [--calls <log> --no-query <name>] [--pr <url>]
+// --pr <url>: the pr field of the last line must equal the url.
 import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -17,6 +18,7 @@ try { json = JSON.parse(last.replace(/^`+|`+$/g, '')); } catch { fail(`the last 
 if (json.result !== opt('--result')) fail(`result is ${json.result}, expected ${opt('--result')}`);
 const issue = opt('--issue');
 if (issue !== undefined && String(json.issue) !== issue) fail(`issue is ${json.issue}, expected ${issue}`);
+if (opt('--pr') !== undefined && json.pr !== opt('--pr')) fail(`pr is ${json.pr}, expected ${opt('--pr')}`);
 if (opt('--state')) {
   const now = readFileSync(opt('--state'), 'utf8');
   const was = readFileSync(opt('--orig'), 'utf8');
