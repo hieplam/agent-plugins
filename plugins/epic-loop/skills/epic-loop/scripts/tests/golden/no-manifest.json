@@ -13,7 +13,7 @@
   },
   "fresh: next --probe --dry-run": {
     "code": 0,
-    "stdout": "{\"v\":1,\"action\":\"take\",\"tasks\":[{\"key\":\"48\",\"attempt\":1,\"resources\":[]}],\"reason\":\"\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[],\"goals\":null}\n",
+    "stdout": "{\"v\":1,\"action\":\"take\",\"tasks\":[{\"key\":\"48\",\"attempt\":1,\"resources\":[]}],\"reason\":\"\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[],\"blockers\":[],\"goals\":null}\n",
     "stderr": "",
     "writes": []
   },
@@ -59,7 +59,7 @@
   },
   "finished: next --probe --dry-run": {
     "code": 0,
-    "stdout": "{\"v\":1,\"action\":\"done\",\"tasks\":[],\"reason\":\"\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[],\"goals\":null}\n",
+    "stdout": "{\"v\":1,\"action\":\"done\",\"tasks\":[],\"reason\":\"\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[],\"blockers\":[],\"goals\":null}\n",
     "stderr": "",
     "writes": []
   },
@@ -98,19 +98,19 @@
   },
   "gate: next": {
     "code": 0,
-    "stdout": "{\"action\":\"wait\",\"reason\":\"waiting for a human\",\"issues\":[{\"issue\":52,\"title\":\"L4 - Owner approval of the phone preview\",\"blockedBy\":[]}],\"epic\":46,\"counts\":{\"total\":14,\"done\":4,\"inProgress\":0,\"ready\":0,\"blocked\":6,\"needsHuman\":4},\"closed\":[]}\n",
+    "stdout": "{\"action\":\"wait\",\"reason\":\"waiting for a human\",\"issues\":[{\"issue\":52,\"title\":\"L4 - Owner approval of the phone preview\",\"blockedBy\":[]}],\"blockers\":[],\"epic\":46,\"counts\":{\"total\":14,\"done\":4,\"inProgress\":0,\"ready\":0,\"blocked\":6,\"needsHuman\":4},\"closed\":[]}\n",
     "stderr": "",
     "writes": []
   },
   "gate: next --dry-run": {
     "code": 0,
-    "stdout": "{\"action\":\"wait\",\"reason\":\"waiting for a human\",\"issues\":[{\"issue\":52,\"title\":\"L4 - Owner approval of the phone preview\",\"blockedBy\":[]}],\"epic\":46,\"counts\":{\"total\":14,\"done\":4,\"inProgress\":0,\"ready\":0,\"blocked\":6,\"needsHuman\":4},\"closed\":[]}\n",
+    "stdout": "{\"action\":\"wait\",\"reason\":\"waiting for a human\",\"issues\":[{\"issue\":52,\"title\":\"L4 - Owner approval of the phone preview\",\"blockedBy\":[]}],\"blockers\":[],\"epic\":46,\"counts\":{\"total\":14,\"done\":4,\"inProgress\":0,\"ready\":0,\"blocked\":6,\"needsHuman\":4},\"closed\":[]}\n",
     "stderr": "",
     "writes": []
   },
   "gate: next --probe --dry-run": {
     "code": 0,
-    "stdout": "{\"v\":1,\"action\":\"wait\",\"tasks\":[],\"reason\":\"waiting for a human\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[\"52\"],\"goals\":null}\n",
+    "stdout": "{\"v\":1,\"action\":\"wait\",\"tasks\":[],\"reason\":\"waiting for a human\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[\"52\"],\"blockers\":[],\"goals\":null}\n",
     "stderr": "",
     "writes": []
   },

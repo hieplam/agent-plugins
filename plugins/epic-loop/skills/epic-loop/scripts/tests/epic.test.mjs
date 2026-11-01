@@ -557,7 +557,7 @@ test('link is idempotent: an existing "blocked by" link is reported, not an erro
 
 // ---------- probe mode: next --probe, release --if-claimed / --excused (spec 2.1 and 2.4)
 
-const PROBE_KEYS = ['v', 'action', 'tasks', 'reason', 'resource', 'until', 'plan', 'issues', 'goals'];
+const PROBE_KEYS = ['v', 'action', 'tasks', 'reason', 'resource', 'until', 'plan', 'issues', 'blockers', 'goals'];
 
 test('next --probe prints the probe line, implies --parallel, and lists every ready task', () => {
   const st = lanes({ 2: { state: 'CLOSED' }, 3: { labels: ['loop:in-progress'], labelEvents: [{ label: 'loop:in-progress', createdAt: hoursAgo(1) }] } });
@@ -565,7 +565,7 @@ test('next --probe prints the probe line, implies --parallel, and lists every re
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json, {
     v: 1, action: 'take', tasks: [{ key: '4', attempt: 1, resources: [] }], reason: '', resource: null, until: null,
-    plan: null, issues: [], goals: null,
+    plan: null, issues: [], blockers: [], goals: null,
   });
   const all = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], lanes({ 2: { state: 'CLOSED' } }));
   assert.deepEqual(all.json.tasks.map((t) => t.key), ['3', '4']);
@@ -605,6 +605,81 @@ test('next --probe answers wait, blocked, skip and done in the same shape, with 
   const done = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], finished);
   assert.equal(done.json.action, 'done');
   assert.deepEqual(Object.keys(done.json), PROBE_KEYS);
+});
+
+// ---------- P16: the probe line carries the blockers (spec 2.1)
+
+// Tasks 2 to 6 of epic 1, blocked by the stand-alone issues 7 to 9, and phase 20 with two sub-tasks.
+const blockedWorld = (over = {}) => world([
+  { n: 1, title: 'Epic' },
+  { n: 7, title: 'Blocker seven' }, { n: 8, title: 'Blocker eight' }, { n: 9, title: 'Blocker nine' },
+  { n: 2, parent: 1, title: 'T2', blockedBy: [8], ...(over[2] || {}) },
+  { n: 3, parent: 1, title: 'T3', blockedBy: [8], ...(over[3] || {}) },
+  { n: 4, parent: 1, title: 'T4', blockedBy: [8], ...(over[4] || {}) },
+  { n: 5, parent: 1, title: 'T5', blockedBy: [9], ...(over[5] || {}) },
+  { n: 6, parent: 1, title: 'T6', blockedBy: [7], ...(over[6] || {}) },
+  ...(over.extra || []),
+]);
+const probeOf = (st) => run(['next', '1', '-R', REPO, '--dry-run', '--probe'], st);
+
+test('P16: a blocked epic gives the key, title, count and url of each blocker', () => {
+  const r = probeOf(blockedWorld());
+  assert.equal(r.json.action, 'blocked');
+  assert.deepEqual(r.json.blockers[0], { key: '8', title: 'Blocker eight', blocks: 3, url: 'https://github.com/o/r/issues/8' });
+});
+
+test('P16: blockers sort by the number of tasks they block, then by issue number', () => {
+  const r = probeOf(blockedWorld());
+  assert.deepEqual(r.json.blockers.map((b) => [b.key, b.blocks]), [['8', 3], ['7', 1], ['9', 1]]);
+});
+
+test('P16: a closed blocker is not listed', () => {
+  const both = { blockedBy: [8, 9] };
+  const open = probeOf(blockedWorld({ 2: both, 3: both, 4: both }));
+  assert.deepEqual(open.json.blockers.map((b) => [b.key, b.blocks]), [['8', 3], ['9', 4], ['7', 1]].sort((a, b) => b[1] - a[1]));
+  const st = blockedWorld({ 2: both, 3: both, 4: both });
+  st.issues['8'].state = 'CLOSED';
+  const closedRun = probeOf(st);
+  assert.ok(closedRun.json.blockers.every((b) => b.key !== '8'), 'blocker 8 is closed');
+  assert.deepEqual(closedRun.json.blockers.map((b) => [b.key, b.blocks]), [['9', 4], ['7', 1]]);
+});
+
+test('P16: a blocker of a parent counts once for each sub-task', () => {
+  const st = world([
+    { n: 1, title: 'Epic' }, { n: 8, title: 'Blocker eight' },
+    { n: 20, parent: 1, title: 'Phase', blockedBy: [8] },
+    { n: 21, parent: 20, title: 'T21' }, { n: 22, parent: 20, title: 'T22' },
+  ]);
+  const r = probeOf(st);
+  assert.equal(r.json.action, 'blocked');
+  assert.deepEqual(r.json.blockers.map((b) => [b.key, b.blocks]), [['8', 2]]);
+});
+
+test('P16: every other action, and a blocked result with no issues, give no blockers', () => {
+  const wait = run(['next', '46', '-R', REPO, '--dry-run', '--probe'], network(closed(48, 49, 50, 51)));
+  assert.equal(wait.json.action, 'wait');
+  assert.deepEqual(wait.json.blockers, []);
+  assert.deepEqual(probeOf(lanes({ 2: { state: 'CLOSED' } })).json.blockers, []);
+  const claimed = { labels: ['loop:in-progress'], labelEvents: [{ label: 'loop:in-progress', createdAt: hoursAgo(1) }] };
+  const skip = probeOf(lanes({ 2: claimed }));
+  assert.equal(skip.json.action, 'skip');
+  assert.deepEqual(skip.json.blockers, []);
+  const finished = lanes({ 2: { state: 'CLOSED' }, 3: { state: 'CLOSED' }, 4: { state: 'CLOSED' }, 5: { state: 'CLOSED' } });
+  finished.issues['1'].state = 'CLOSED';
+  assert.deepEqual(probeOf(finished).json.blockers, []);
+  const noIssues = probeOf(goalEpic({ tasks: allClosed }));
+  assert.equal(noIssues.json.action, 'blocked');
+  assert.deepEqual(noIssues.json.issues, []);
+  assert.deepEqual(noIssues.json.blockers, []);
+});
+
+test('P16: issues stay strings, and next without --probe only gains the key blockers', () => {
+  const r = probeOf(blockedWorld());
+  assert.ok(r.json.issues.length > 0 && r.json.issues.every((i) => typeof i === 'string'));
+  const plain = run(['next', '1', '-R', REPO, '--dry-run'], blockedWorld());
+  assert.deepEqual(Object.keys(plain.json), ['action', 'reason', 'issues', 'blockers', 'epic', 'counts', 'closed']);
+  assert.ok(plain.json.issues.every((i) => typeof i === 'object' && typeof i.issue === 'number'));
+  assert.deepEqual(plain.json.blockers[0], { key: '8', title: 'Blocker eight', blocks: 3, url: 'https://github.com/o/r/issues/8' });
 });
 
 test('release --if-claimed does nothing, and writes nothing, when the task has no work label', () => {
