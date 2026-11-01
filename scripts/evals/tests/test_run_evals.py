@@ -475,7 +475,7 @@ class RunCasePassesTheEnvToTheExecutor(unittest.TestCase):
 
 class RunClaudeMergesExtraEnv(unittest.TestCase):
     def test_extra_env_reaches_the_subprocess(self):
-        with mock.patch.object(run_evals.subprocess, "run",
+        with mock.patch.object(run_evals.subprocess, "Popen",
                                side_effect=FileNotFoundError) as run:
             run_evals.run_claude("p", cwd=Path("/tmp"), timeout=5,
                                  extra_env={"EXPLAINING_ARTIFACTS": "/tmp/scr"})
@@ -1265,7 +1265,7 @@ class RunTurnsWritesTheFinalTurnManifestOutsideScratch(unittest.TestCase):
 
 class RunClaudeSessionFlagsReachTheSubprocess(unittest.TestCase):
     def test_session_id_without_resume_reaches_subprocess_run(self):
-        with mock.patch.object(run_evals.subprocess, "run",
+        with mock.patch.object(run_evals.subprocess, "Popen",
                                side_effect=FileNotFoundError) as run:
             run_evals.run_claude("p", cwd=Path("/tmp"), timeout=5,
                                  session_id="abc", resume=False)
@@ -1274,7 +1274,7 @@ class RunClaudeSessionFlagsReachTheSubprocess(unittest.TestCase):
         self.assertNotIn("--no-session-persistence", cmd)
 
     def test_resume_reaches_subprocess_run_with_the_same_id(self):
-        with mock.patch.object(run_evals.subprocess, "run",
+        with mock.patch.object(run_evals.subprocess, "Popen",
                                side_effect=FileNotFoundError) as run:
             run_evals.run_claude("p", cwd=Path("/tmp"), timeout=5,
                                  session_id="abc", resume=True)

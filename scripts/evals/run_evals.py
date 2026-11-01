@@ -305,6 +305,143 @@ def build_claude_command(prompt: str, model: str | None = None,
     return cmd
 
 
+class _WinJob:
+    """A Windows job object that holds one session and everything it starts.
+
+    Why a job object: on Windows a process whose parent has died cannot be found
+    through its parent later, and `taskkill /T` only walks the tree while the root
+    lives. A job keeps every descendant as a member, also after the root exits, so
+    one TerminateJobObject call ends the whole tree. KILL_ON_JOB_CLOSE also ends the
+    tree if this runner itself dies.
+    """
+
+    def __init__(self):
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                wintypes.LPVOID, wintypes.DWORD]
+        self._k32 = k32
+        self.handle = k32.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise OSError(ctypes.get_last_error(), "CreateJobObject failed")
+
+        class _Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                        ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class _Io(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in (
+                "ReadOps", "WriteOps", "OtherOps", "ReadBytes", "WriteBytes", "OtherBytes")]
+
+        class _Extended(ctypes.Structure):
+            _fields_ = [("Basic", _Basic), ("Io", _Io),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        info = _Extended()
+        info.Basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        ok = k32.SetInformationJobObject(self.handle, 9, ctypes.byref(info),
+                                         ctypes.sizeof(info))
+        if not ok:
+            raise OSError(ctypes.get_last_error(), "SetInformationJobObject failed")
+
+    def adopt_and_resume(self, proc) -> None:
+        """Put the suspended `proc` into the job, then let it run."""
+        import ctypes
+        from ctypes import wintypes
+        handle = wintypes.HANDLE(int(proc._handle))
+        if not self._k32.AssignProcessToJobObject(self.handle, handle):
+            raise OSError(ctypes.get_last_error(), "AssignProcessToJobObject failed")
+        ctypes.WinDLL("ntdll").NtResumeProcess(handle)
+
+    def terminate(self) -> None:
+        if self.handle:
+            self._k32.TerminateJobObject(self.handle, 1)
+            self._k32.CloseHandle(self.handle)
+            self.handle = None
+
+
+def run_in_tree(cmd: list, cwd, env: dict | None, timeout: float):
+    """Run `cmd` like `subprocess.run(capture_output=True, text=True)`, and make sure
+    that no process of its tree outlives the call: not after a normal exit, not after
+    a time-out, not after an error.
+
+    A model session starts children (a shell, `find`, a dev server). The session can
+    end while a child lives on with a dead parent. Such an orphan kept running for
+    90 minutes in the eval runs of 2026-11-01. So each session starts in its own
+    process group (POSIX, `start_new_session`, ended with `killpg`) or in its own job
+    object (Windows, ended with `TerminateJobObject`). Raises subprocess.TimeoutExpired
+    on a time-out, after the tree is dead.
+    """
+    job = None
+    # Output goes to temp files, not pipes. An orphan child inherits a pipe and holds
+    # it open, so reading a pipe would block until the child ends. Files let the runner
+    # wait for the root only, end the tree, and then read.
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        kwargs = dict(cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+        if os.name == "nt":
+            job = _WinJob()
+            # CREATE_SUSPENDED: the session cannot start a child before it is in the job.
+            kwargs["creationflags"] = 0x00000004
+        else:
+            kwargs["start_new_session"] = True
+        try:
+            proc = subprocess.Popen(cmd, **kwargs)
+        except BaseException:
+            if job:
+                job.terminate()
+            raise
+        try:
+            if job:
+                job.adopt_and_resume(proc)
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _kill_tree(proc, job)
+                proc.wait()
+                raise
+        finally:
+            _kill_tree(proc, job)
+        out.seek(0)
+        err.seek(0)
+        return subprocess.CompletedProcess(
+            cmd, proc.returncode,
+            out.read().decode("utf-8", errors="replace"),
+            err.read().decode("utf-8", errors="replace"))
+
+
+def _kill_tree(proc, job) -> None:
+    """End every process that `proc` started. Safe to call more than once."""
+    if job is not None:
+        job.terminate()
+    else:
+        import signal
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+
 def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
                 agents_json: dict | None = None, agent_name: str | None = None,
                 tools: str | None = None, safe_mode: bool = False,
@@ -330,10 +467,7 @@ def run_claude(prompt: str, cwd: Path, timeout: int, model: str | None = None,
 
     start = time.time()
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(cwd), capture_output=True, text=True,
-            timeout=timeout, env=env,
-        )
+        proc = run_in_tree(cmd, cwd=str(cwd), env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "events": [], "error": f"timeout after {timeout}s",
                 "wall_seconds": time.time() - start}
@@ -1037,8 +1171,7 @@ def run_checks(planned: list, scratch: Path, timeout: int) -> dict:
     """Impure edge: run each planned check in the scratch dir, first non-pass wins."""
     for check in planned:
         try:
-            proc = subprocess.run(check["argv"], cwd=str(scratch), capture_output=True,
-                                   text=True, timeout=timeout)
+            proc = run_in_tree(check["argv"], cwd=str(scratch), env=None, timeout=timeout)
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
             return {"outcome": CHECK_UNGRADED, "name": check["name"],
                     "evidence": f"check could not run: {e}"}
