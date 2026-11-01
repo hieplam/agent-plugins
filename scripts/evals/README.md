@@ -394,3 +394,42 @@ Verified end-to-end: eval 2 went **FAIL -> PASS** on identical prompt text once 
 `--jobs N` (default 4) runs executions concurrently — they are independent subprocesses in
 separate temp dirs. Serially a 30-case suite is over an hour, which is slow enough that a gate
 stops getting run.
+
+## Eval gate
+
+`eval_gate.py` guards two files of the epic-loop skill: `references/tick.md` and
+`references/drive.md`. A change of either file must commit a new
+`plugins/epic-loop/skills/epic-loop/evals/gate-result.json`. The result holds the hash
+of both files, so any edit after the gate ran makes `verify-result` refuse.
+
+Run it in three steps. `SK` is `plugins/epic-loop/skills/epic-loop`. Use a scratch folder
+and `GH_TOKEN=invalid`, so a test session cannot reach GitHub.
+
+1. In a worktree of the base, run the baseline:
+   `run_evals.py --evals SK/evals/evals.json --mode with_skill --exec-model haiku --grader-model haiku --runs 5 --jobs 4 --label baseline --out-dir <dir>/baseline`
+2. In the worktree of the change, run it again with `--label candidate --out-dir <dir>/candidate`.
+3. Compare, then write the result:
+   - `eval_gate.py check --baseline <dir>/baseline/benchmark.json --candidate <dir>/candidate/benchmark.json`
+     prints `eval <id> <bp>/<bt> -> <cp>/<ct> ok|WORSE` for each eval, then `verdict: pass|refuse|error`.
+     The exit code is 0, 1 or 2.
+   - `eval_gate.py write-result` takes the same flags plus `--out SK/evals/gate-result.json`.
+     It writes the file only on a pass.
+   - `eval_gate.py verify-result --skill-dir SK` checks the committed tree. It prints
+     `verify-result: ok`, or `refuse: references/tick.md changed since the gate ran` and exits 1.
+     It makes no model call.
+
+The rule: a case is WORSE when its pass rate falls and the chance of such a split by luck
+is under 0.10 (hypergeometric, over both sides). At 5 runs a side, 5/5 to 2/5 and 3/5 to
+0/5 are refused. 3/5 to 1/5 passes as noise. A baseline failure alone is no reason to
+refuse, so 0/5 to 0/5 passes. A case with under 5 graded runs on a side, or on one side
+only, is an error.
+
+Cost, by the measure of the executor calls: about 0.04 USD for one pass over the 7 evals, so
+about 0.22 USD for a side, and about 3 minutes with `--jobs 4`. The grader cost is not
+recorded. Stop if the executor cost of one side passes 0.50 USD.
+
+Known baseline: eval 3 passes about 3 of 5 and eval 4 passes 0 of 5 on both sides of the
+skill changes, because the agent does not load the skill. A refusal on two identical sides:
+run the gate again once.
+
+Tests: `python3 -m unittest discover -s scripts/evals/tests -t . -p test_eval_gate.py`.
