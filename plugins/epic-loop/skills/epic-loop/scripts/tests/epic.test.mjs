@@ -824,6 +824,19 @@ test('G29: a web/ PR of an epic with no manifest line needs no Acceptance line',
   assert.equal(r.code, 0, r.stdout);
 });
 
+test('G11: --probe prints the numbers of the last goal result of a manifest epic', () => {
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], goalEpic({ comments: [ALL_PASS, ONE_FAILS] }));
+  assert.equal(r.json.action, 'take');
+  assert.deepEqual(r.json.goals, { passed: 1, total: 2 });
+  assert.equal(run(['next', '1', '-R', REPO, '--dry-run', '--probe'], goalEpic()).json.goals, null, 'no result yet');
+});
+
+test('G11: --probe prints null goals for an epic with no manifest line, also with a result comment', () => {
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], goalEpic({ comments: [ONE_FAILS], body: 'No goal here.' }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.goals, null);
+});
+
 // The golden file holds what epic.mjs did before it knew about goals: stdout, stderr, exit code and writes of each command.
 const GOLDEN = join(HERE, 'golden', 'no-manifest.json');
 const goldenWorlds = () => {

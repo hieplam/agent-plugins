@@ -202,11 +202,12 @@ function attemptsOf(repo, number) {
 const resourcesOf = (t) => t.labels.map((l) => NEEDS.exec(l)?.[1]).filter(Boolean);
 
 // The probe line (spec 2.1) from the decision of `decide`: the same facts, in the keys the console reads.
-function probeLine(d) {
+function probeLine(d, goals = null) {
   const line = { v: 1, action: d.action, tasks: [], reason: d.action === 'skip' ? '' : (d.reason ?? ''), resource: null, until: null, plan: null, issues: [], goals: null };
   if (d.action === 'take') line.tasks = d.ready.map((t) => ({ key: String(t.issue), attempt: t.attempt, resources: t.resources }));
   if (d.action === 'wait' || d.action === 'blocked') line.issues = d.issues.map((i) => String(i.issue));
   if (d.action === 'plan') line.plan = d.plan;
+  if (goals?.last) line.goals = { passed: goals.last.passed, total: goals.last.total };
   return line;
 }
 
@@ -408,7 +409,7 @@ function cmdNext(repo, n, flags) {
   const d = decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow, parallel: Boolean(flags.parallel || flags.probe), goals });
   if (goals && !dry && d.action === 'plan') comment(root.repo, root.number, `loop-plan: ${d.plan.sha} ${d.plan.failing.join(' ')}`.trim());
   if (goals && !dry && d.action === 'done' && root.open) { closeIssue(root.repo, root.number, 'All sub-issues are closed and every goal passes.'); d.closed.push(root.number); }
-  console.log(JSON.stringify(flags.probe ? probeLine(d) : d));
+  console.log(JSON.stringify(flags.probe ? probeLine(d, goals) : d));
 }
 
 function cmdClaim(repo, n, flags) {
