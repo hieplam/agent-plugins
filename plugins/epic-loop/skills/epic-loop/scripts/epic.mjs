@@ -6,12 +6,15 @@
 // is stored locally: every command reads GitHub again, so a fresh session picks up exactly where the last one stopped.
 //
 //   status <epic> [--json]                         every task: done / in progress / needs human / blocked / ready
-//   next <epic> [--dry-run] [--parallel] [--probe] the decision of one run, one JSON line: take | skip | wait | blocked | done
+//   next <epic> [--dry-run] [--parallel] [--probe] the decision of one run, one JSON line: take | plan | skip | wait | blocked | done
 //                                                  (also closes phases and the epic once all their sub-issues are closed);
 //                                                  --parallel: take even while tasks are in progress, and list every ready task;
 //                                                  --probe: imply --parallel and print the probe line of the console (spec 2.1):
 //                                                  v, action, tasks [{key, attempt, resources from "needs:<name>" labels}],
-//                                                  reason, resource, until, plan, issues (strings), goals
+//                                                  reason, resource, until, plan, issues (strings), goals;
+//                                                  an epic with a "Goal manifest: goals/<file>.json" line refuses build tasks until
+//                                                  its manifest was red at opening, and it closes on its goal result, not on an
+//                                                  empty task list: failing rows give plan (spec 2.10)
 //   claim <task> [--epic <n>] [--note "<text>"] [--parallel]
 //                                                  take a ready task: label loop:in-progress, comment "loop-attempt: <k>";
 //                                                  --parallel allows it while other tasks of the epic are in progress
@@ -26,7 +29,9 @@
 //                                                  really done? closed by a merged PR whose body has a "## Verify" section
 //                                                  naming Red, Green and Stub; PASS removes the label, closes finished parents;
 //                                                  the status castraferrum/gate of the PR head: failure always fails, --gate
-//                                                  also fails when it is not success; no flag and no status: as before
+//                                                  also fails when it is not success; no flag and no status: as before;
+//                                                  in an epic with a goal manifest, a PR with a web/ path also needs an Acceptance:
+//                                                  line with the compare result, and only next closes the epic
 //   link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>]   (an existing link is reported, not an error)
 //   unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>]                remove "blocked by" links (rewire to the real order)
 //   create <manifest.json> [--dry-run]             create an epic, its phases and tasks, and every link (references/plan.md)
@@ -53,6 +58,9 @@ const ATTEMPT = /^loop-(attempt|baseline):/;            // loop-baseline: is wha
 const FOUND = /^loop-found: /m;                         // in a loop-release: comment: the attempt filed real defects
 const EXCUSED = /^loop-excused: /m;                     // in a loop-release: comment: a limit or a restart ended the attempt
 const NEEDS = /^needs:(.+)$/;                           // a task label that names a resource the task uses
+const MANIFEST = /^Goal manifest: (goals\/[\w.-]+\.json)\s*$/m;  // in an epic body: this epic runs on a goal check
+const GOAL_TASK = /^Goal task: yes\s*$/m;                // in a task body: this task may run before the goal check is red
+const GOAL_RESULT = 'loop-goals: ';                     // an epic comment: the result of the last goal check
 const GROUP = { done: 'done', 'in-progress': 'in progress', ready: 'ready', blocked: 'blocked', 'needs-human': 'needs human' };
 const NOW = process.env.EPIC_LOOP_NOW ? new Date(process.env.EPIC_LOOP_NOW) : new Date();
 
@@ -104,6 +112,10 @@ const Q_LABEL_EVENTS = `query LabelEvents($owner: String!, $name: String!, $numb
   issue(number: $number) { timelineItems(itemTypes: [LABELED_EVENT], last: 50) { nodes { __typename ... on LabeledEvent { createdAt label { name } } } } } } }`;
 const Q_COMMENTS = `query Comments($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { comments(last: 100) { nodes { body } } } } }`;
+const Q_BODY = `query IssueBody($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+  issue(number: $number) { body } } }`;
+const Q_CLOSING_FILES = `query ClosingFiles($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+  issue(number: $number) { closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { merged files(first: 100) { totalCount nodes { path } } } } } } }`;
 const Q_CLOSING = `query Closing($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { number state labels(first: 50) { nodes { name } }
     closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number url merged title body headRefOid } } } } }`;
@@ -194,6 +206,7 @@ function probeLine(d) {
   const line = { v: 1, action: d.action, tasks: [], reason: d.action === 'skip' ? '' : (d.reason ?? ''), resource: null, until: null, plan: null, issues: [], goals: null };
   if (d.action === 'take') line.tasks = d.ready.map((t) => ({ key: String(t.issue), attempt: t.attempt, resources: t.resources }));
   if (d.action === 'wait' || d.action === 'blocked') line.issues = d.issues.map((i) => String(i.issue));
+  if (d.action === 'plan') line.plan = d.plan;
   return line;
 }
 
@@ -202,13 +215,51 @@ function counts(tasks) {
   return { total: tasks.length, done: n('done'), inProgress: n('in-progress'), ready: n('ready'), blocked: n('blocked'), needsHuman: n('needs-human') };
 }
 
-// The decision of one run. Only `take` lets the run work; every other action ends the run.
-function decide(root, c, { staleHours, closedNow = [], parallel = false }) {
+const manifestLine = (repo, number) => MANIFEST.exec(issueQuery(Q_BODY, repo, number).body || '')?.[1] ?? null;
+
+// The newest loop-goals: comment that parses, or null.
+function lastGoalResult(bodies) {
+  for (const b of [...bodies].reverse()) {
+    if (!b.startsWith(GOAL_RESULT)) continue;
+    try {
+      const r = JSON.parse(b.slice(GOAL_RESULT.length));
+      if (Number.isFinite(r?.passed) && Number.isFinite(r?.total)) return r;
+    } catch { /* the next older comment decides */ }
+  }
+  return null;
+}
+
+// The goal facts of an epic, or null for an epic with no manifest line: that epic behaves as it always did.
+function goalState(root) {
+  const path = manifestLine(root.repo, root.number);
+  if (!path) return null;
+  const text = fileOnDefaultBranch(root.repo, path);
+  let opened = null;
+  try { opened = JSON.parse(text)?.opened ?? null; } catch { /* a missing or broken file refuses, like no opened key */ }
+  const red = opened !== null && opened.passed < opened.total;
+  const bodies = issueQuery(Q_COMMENTS, root.repo, root.number).comments.nodes.map((c) => c.body);
+  return { path, refused: !red, last: lastGoalResult(bodies), planned: bodies.filter((b) => b.startsWith('loop-plan: ')).map((b) => b.split(/\s+/)[1]) };
+}
+
+// What an epic with a goal manifest does when no task is left.
+function goalEnd(root, goals, base) {
+  const { last, planned } = goals;
+  if (!last) return { action: 'blocked', reason: `no goal result yet: no ${GOAL_RESULT.trim()} comment on epic #${root.number}`, issues: [], ...base };
+  const failing = Array.isArray(last.failing) ? last.failing : [];
+  if (last.passed >= last.total && !failing.length) return { action: 'done', ...base };
+  const sha = String(last.sha ?? 'unknown');
+  if (planned.includes(sha)) return { action: 'blocked', reason: `a plan run already started for ${sha}, and the goal check still fails: ${failing.join(' ')}`, issues: [], ...base };
+  return { action: 'plan', plan: { key: `plan-${root.number}`, failing, sha }, ...base };
+}
+
+// The decision of one run. Only `take` and `plan` let the run work; every other action ends the run.
+function decide(root, c, { staleHours, closedNow = [], parallel = false, goals = null }) {
   const base = { epic: root.number, counts: counts(c.tasks), closed: closedNow };
   const brief = (t) => ({ issue: t.number, title: t.title, blockedBy: t.openBlockers.map((b) => b.number) });
   if (!root.open && finished(root)) return { action: 'done', ...base };
   if (!c.tasks.length) return { action: 'blocked', reason: `epic #${root.number} has no sub-issues`, ...base };
-  const ready = c.tasks.filter((t) => t.group === 'ready').sort((a, b) => b.unblocks - a.unblocks || a.order - b.order);
+  const allowed = (t) => !goals?.refused || GOAL_TASK.test(issueQuery(Q_BODY, t.repo, t.number).body || '');
+  const ready = c.tasks.filter((t) => t.group === 'ready' && allowed(t)).sort((a, b) => b.unblocks - a.unblocks || a.order - b.order);
   if (parallel && ready.length) {
     const t = ready[0];
     return { action: 'take', issue: t.number, title: t.title, attempt: attemptsOf(t.repo, t.number) + 1, path: [...t.path, t.number],
@@ -226,7 +277,8 @@ function decide(root, c, { staleHours, closedNow = [], parallel = false }) {
     return { action: 'take', issue: t.number, title: t.title, attempt: attemptsOf(t.repo, t.number) + 1, path: [...t.path, t.number], ...base };
   }
   const open = c.tasks.filter((t) => t.group !== 'done');
-  if (!open.length) return { action: 'done', ...base };
+  if (goals?.refused) return { action: 'blocked', reason: `${goals.path} must exist and be red at opening before a build task starts`, issues: open.map(brief), ...base };
+  if (!open.length) return goals ? goalEnd(root, goals, base) : { action: 'done', ...base };
   const gates = open.filter((t) => t.group === 'needs-human' && !t.openBlockers.length);
   if (gates.length) return { action: 'wait', reason: 'waiting for a human', issues: gates.map(brief), ...base };
   return { action: 'blocked', reason: 'every open task is blocked', issues: open.map(brief), ...base };
@@ -266,12 +318,12 @@ function addBlockedBy(repo, n, blocker) {
 }
 const removeBlockedBy = (repo, n, blocker) => gh(['api', '-X', 'DELETE', `repos/${repo}/issues/${n}/dependencies/blocked_by/${issueId(repo, blocker)}`]);
 
-// Close every parent under (and including) `root` whose sub-issues are all finished.
-function sweep(root) {
+// Close every parent under (and including) `root` whose sub-issues are all finished. With keepRoot, `root` stays open.
+function sweep(root, keepRoot = false) {
   const closed = [];
   (function walk(n) {
     n.children.filter((c) => c.children.length).forEach(walk);
-    if (n.children.length && n.open && finished(n)) { closeIssue(n.repo, n.number, 'All sub-issues are closed.'); n.open = false; closed.push(n.number); }
+    if (n.children.length && n.open && finished(n) && !(keepRoot && n === root)) { closeIssue(n.repo, n.number, 'All sub-issues are closed.'); n.open = false; closed.push(n.number); }
   })(root);
   return closed;
 }
@@ -283,7 +335,7 @@ function closeFinishedAncestors(repo, number) {
     const p = issueQuery(Q_PARENT, cur.repo, cur.number).parent;
     if (!p) break;
     const parent = loadTree(p.repository.nameWithOwner, p.number);
-    if (!finished(parent)) break;
+    if (!finished(parent) || manifestLine(parent.repo, parent.number)) break;    // only `next` closes a goal epic, on its result
     if (parent.open) { closeIssue(parent.repo, parent.number, 'All sub-issues are closed.'); closed.push(parent.number); }
     cur = parent;
   }
@@ -309,6 +361,7 @@ function describe(d, repo) {
   if (d.action === 'skip') return `skip, #${d.issue} is in progress${d.hours !== null ? ` (${d.hours}h${d.stale ? ', stale' : ''})` : ''}`;
   if (d.action === 'wait') return `wait for a human: ${d.issues.map((i) => `#${i.issue} ${i.title}`).join('; ')}`;
   if (d.action === 'blocked') return `blocked: ${d.reason}`;
+  if (d.action === 'plan') return `plan the next tasks for ${d.plan.failing.join(' ')} at ${d.plan.sha}`;
   return `done${d.closed.length ? ` (closed ${d.closed.map((n) => `#${n}`).join(', ')})` : ''}`;
 }
 
@@ -316,7 +369,7 @@ function cmdStatus(repo, n, flags) {
   const root = loadTree(repo, n);
   const c = classify(root);
   for (const t of c.tasks) if (t.group === 'in-progress') t.hours = hoursSince(labeledAt(t.repo, t.number));
-  const d = decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6) });
+  const d = decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), goals: goalState(root) });
   if (flags.json) {
     const tasks = c.tasks.map((t) => ({ issue: t.number, title: t.title, group: t.group, blockedBy: t.openBlockers.map((b) => b.number), path: t.path }));
     console.log(JSON.stringify({ epic: n, tasks, counts: d.counts, next: d }));
@@ -349,8 +402,12 @@ function cmdStatus(repo, n, flags) {
 function cmdNext(repo, n, flags) {
   const root = loadTree(repo, n);
   const c = classify(root);
-  const closedNow = flags['dry-run'] ? [] : sweep(root);
-  const d = decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow, parallel: Boolean(flags.parallel || flags.probe) });
+  const goals = goalState(root);
+  const dry = Boolean(flags['dry-run']);
+  const closedNow = dry ? [] : sweep(root, Boolean(goals));
+  const d = decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow, parallel: Boolean(flags.parallel || flags.probe), goals });
+  if (goals && !dry && d.action === 'plan') comment(root.repo, root.number, `loop-plan: ${d.plan.sha} ${d.plan.failing.join(' ')}`.trim());
+  if (goals && !dry && d.action === 'done' && root.open) { closeIssue(root.repo, root.number, 'All sub-issues are closed and every goal passes.'); d.closed.push(root.number); }
   console.log(JSON.stringify(flags.probe ? probeLine(d) : d));
 }
 
@@ -436,6 +493,17 @@ function gateStatus(repo, sha) {
   } catch { return null; }
 }
 
+// G29: in an epic with a goal manifest, a PR that changes web/ carries the compare result in its Verify section.
+function acceptanceFailure(repo, n, pr, verify) {
+  const top = topAncestor(repo, n);
+  if (!manifestLine(top.repo, top.number)) return null;
+  const files = issueQuery(Q_CLOSING_FILES, repo, n).closedByPullRequestsReferences.nodes.find((p) => p.merged)?.files;
+  const web = !files || files.totalCount > 100 || files.nodes.some((f) => f.path.startsWith('web/'));   // a list that was cut counts as web/
+  if (!web) return null;
+  const good = verify.split(/\r?\n/).some((l) => /^\W*Acceptance:/.test(l) && /"?pairs"?[: ]+[1-9]\d*/.test(l) && /"?worstRatio"?[: ]+\d+(\.\d+)?/.test(l));
+  return good ? null : `PR #${pr.number} changes web/: its Verify section needs an Acceptance: line with the compare result ("pairs": <n>, "worstRatio": <r>)`;
+}
+
 function cmdCheck(repo, n, flags) {
   if (flags.evidence && !flags.heading) throw new Usage('--evidence needs --heading "<text>"');
   const info = issueQuery(Q_CLOSING, repo, n);
@@ -446,7 +514,11 @@ function cmdCheck(repo, n, flags) {
   else {
     const v = verifySection(pr.body);
     if (v === null) fails.push(`PR #${pr.number} has no "## Verify" section`);
-    else for (const w of ['Red', 'Green', 'Stub']) if (!new RegExp(`\\b${w}\\b`, 'i').test(v)) fails.push(`PR #${pr.number}: its Verify section does not mention ${w}`);
+    else {
+      for (const w of ['Red', 'Green', 'Stub']) if (!new RegExp(`\\b${w}\\b`, 'i').test(v)) fails.push(`PR #${pr.number}: its Verify section does not mention ${w}`);
+      const accept = acceptanceFailure(repo, n, pr, v);
+      if (accept) fails.push(accept);
+    }
     // The gate status: a failure always fails; --gate wants a success. With no flag and no status, nothing changes.
     const gate = gateStatus(repo, pr.headRefOid);
     if (gate === 'failure' || gate === 'error') fails.push(`PR #${pr.number}: the status ${GATE_CONTEXT} of its head is ${gate}`);

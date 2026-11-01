@@ -35,8 +35,18 @@ It prints one JSON line. Act on its `action` and nothing else:
 | `skip`, `stale: false` | Nothing: another run or a person holds `issue`. | `SKIP` |
 | `skip`, `stale: true` | The claim is older than the stale window (6 h). Look for signs of life: an open PR for the issue updated within that window (`gh pr list --search "<n> in:body" --state open --json number,updatedAt`), or recent commits on its branch. If there are none, the run that claimed it died: `E release <n> --reason "stale claim: no activity since <since>"`. Either way, take nothing else in this run. | `SKIP` |
 | `wait` | Nothing. The listed issues wait for a person (`loop:needs-human`). | `WAITING` |
-| `blocked` | Nothing. Say what blocks what (`issues[].blockedBy`). | `BLOCKED` |
+| `plan` | All tasks are closed and goal rows fail. Run `npm run goal:check`, then write 1 to 3 tasks for the rows in `plan.failing` with `E create` (each with its Verify block), and open a PR if the tasks need a plan file. Claim nothing and build nothing in this run. | `DONE` |
+| `blocked` | Nothing. Say what blocks what (`issues[].blockedBy`, or `reason`). | `BLOCKED` |
 | `done` | Nothing. `next` already closed the finished phases and the epic. | `EPIC_DONE` |
+
+An epic with a line `Goal manifest: goals/<file>.json` in its body runs on its goal check. No such line: `next` works
+as described above, and `plan` never appears.
+- Until the manifest exists on the default branch and its `opened` result is red, `next` takes only a task with the
+  body line `Goal task: yes`. With no such task it answers `blocked`.
+- When no task is left, the last epic comment `loop-goals: {json}` decides. No result gives `blocked`. All rows pass
+  gives `done`. Failing rows give `plan`, and `next` first comments `loop-plan: <sha> <ids>`. A second `next` for the
+  same sha gives `blocked`, so one failing commit starts one plan run.
+- `E check` never closes this epic. `next` closes it on `done`.
 
 A **dry run** ("dry run", "what would the loop do next", "change nothing"): run `E next <epic> --dry-run`, report the
 decision, change nothing and stop. Its last line (step 7) has `"result":"DRY_RUN"`, the issue the run would take (or
@@ -89,6 +99,8 @@ now waits for a person, so reply `GAVE_UP`). In both cases stop.
 
 - Follow the repository's normal flow (its CLAUDE.md) and open one PR for this task. The PR body has `Closes #<n>` and
   a `## Verify` section with Red, Green, Stub check and their literal results, plus the ratchet before -> after.
+  In an epic with a goal manifest, a PR with a `web/` path also needs a line in `## Verify` that has the compare result
+  from `report.json`: `Acceptance: "pairs": 164, "worstRatio": 0.00024`. Without both numbers, `E check` fails.
 - When it is merged, run `E check <n>`. If the plan keeps an evidence log, add
   `--evidence <log> --heading "## <task id>"`.
   - PASS removes the label, and closes a phase or the epic that has just finished.
