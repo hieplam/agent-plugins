@@ -7,7 +7,7 @@
 //   { repo, defaultBranch, nextNumber, labels: [name], files: { path: text },
 //     issues: { "<n>": { title, body, state: "OPEN"|"CLOSED", labels: [name], parent: n|null, children: [n],
 //                       blockedBy: [n], comments: [body], labelEvents: [{ label, createdAt, type? }],
-//                       closedBy: [{ number, url, merged, title, body, headRefOid? }] } },
+//                       closedBy: [{ number, url, merged, title, body, headRefOid?, files?: [path], filesTotal?: n }] } },
 //     statuses: { "<sha>": [{ context, state }] } }
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -62,7 +62,14 @@ function graphql(s, args) {
   else if (op === 'LabelEvents') {
     data = { timelineItems: { nodes: (i.labelEvents || []).map((e) => ({ __typename: e.type || 'LabeledEvent', createdAt: e.createdAt, label: { name: e.label } })) } };
   } else if (op === 'Comments') data = { comments: { nodes: (i.comments || []).map((body) => ({ body })) } };
-  else if (op === 'Closing') {
+  else if (op === 'IssueBody') data = { body: i.body || '' };
+  else if (op === 'ClosingFiles') {
+    const nodes = (i.closedBy || []).map((p) => {
+      const paths = p.files || [];
+      return { number: p.number, merged: p.merged, files: { totalCount: p.filesTotal ?? paths.length, nodes: paths.slice(0, 100).map((path) => ({ path })) } };
+    });
+    data = { closedByPullRequestsReferences: { nodes } };
+  } else if (op === 'Closing') {
     data = { number: n, state: i.state, labels: { nodes: (i.labels || []).map((name) => ({ name })) },
       closedByPullRequestsReferences: { nodes: i.closedBy || [] } };
   } else fail(`fake gh: unknown GraphQL operation ${op}`);

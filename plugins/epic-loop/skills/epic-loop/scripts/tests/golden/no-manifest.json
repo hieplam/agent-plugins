@@ -1,0 +1,129 @@
+{
+  "fresh: next": {
+    "code": 0,
+    "stdout": "{\"action\":\"take\",\"issue\":48,\"title\":\"L0 - Baseline\",\"attempt\":1,\"path\":[46,47,48],\"epic\":46,\"counts\":{\"total\":14,\"done\":0,\"inProgress\":0,\"ready\":1,\"blocked\":9,\"needsHuman\":4},\"closed\":[]}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "fresh: next --dry-run": {
+    "code": 0,
+    "stdout": "{\"action\":\"take\",\"issue\":48,\"title\":\"L0 - Baseline\",\"attempt\":1,\"path\":[46,47,48],\"epic\":46,\"counts\":{\"total\":14,\"done\":0,\"inProgress\":0,\"ready\":1,\"blocked\":9,\"needsHuman\":4},\"closed\":[]}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "fresh: next --probe --dry-run": {
+    "code": 0,
+    "stdout": "{\"v\":1,\"action\":\"take\",\"tasks\":[{\"key\":\"48\",\"attempt\":1,\"resources\":[]}],\"reason\":\"\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[],\"goals\":null}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "fresh: status": {
+    "code": 0,
+    "stdout": "#46 Epic: network access  [open, 0/14 done]\n  #47 Phase 1  [open, 0/7 done]\n    #48    ready        L0 - Baseline\n    #49    blocked      L1 - Flags (by #48)\n    #50    blocked      L2 - Listen (by #49)\n    #51    blocked      L3 - Phone preview (by #50)\n    #52    needs human  L4 - Owner approval of the phone preview\n    #53    blocked      L5 - Phone layout (by #52)\n    #54    needs human  L6 - Owner acceptance\n  #55 Phase 2  [open, 0/7 done, blocked by #47]\n    #56    blocked      R1 - Flags (by #47, #54)\n    #57    blocked      R2 - Sign-in (by #47, #56)\n    #58    blocked      R3 - Preview (by #47, #57)\n    #59    needs human  R4 - Owner approval\n    #60    blocked      R5 - Screen (by #47, #59)\n    #61    blocked      R6 - Tunnel (by #47, #60)\n    #62    needs human  R7 - Owner acceptance\n\ndone 0 | in progress 0 | ready 1 | blocked 9 | needs human 4\nnext: take #48 L0 - Baseline (attempt 1)\n",
+    "stderr": "",
+    "writes": []
+  },
+  "fresh: check": {
+    "code": 1,
+    "stdout": "FAIL #48\n- the issue is not closed\n- no merged pull request closes it (the PR body needs \"Closes #48\")\n",
+    "stderr": "",
+    "writes": []
+  },
+  "finished: next": {
+    "code": 0,
+    "stdout": "{\"action\":\"done\",\"epic\":46,\"counts\":{\"total\":14,\"done\":14,\"inProgress\":0,\"ready\":0,\"blocked\":0,\"needsHuman\":0},\"closed\":[47,55,46]}\n",
+    "stderr": "",
+    "writes": [
+      [
+        "issue",
+        "close",
+        "47"
+      ],
+      [
+        "issue",
+        "close",
+        "55"
+      ],
+      [
+        "issue",
+        "close",
+        "46"
+      ]
+    ]
+  },
+  "finished: next --dry-run": {
+    "code": 0,
+    "stdout": "{\"action\":\"done\",\"epic\":46,\"counts\":{\"total\":14,\"done\":14,\"inProgress\":0,\"ready\":0,\"blocked\":0,\"needsHuman\":0},\"closed\":[]}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "finished: next --probe --dry-run": {
+    "code": 0,
+    "stdout": "{\"v\":1,\"action\":\"done\",\"tasks\":[],\"reason\":\"\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[],\"goals\":null}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "finished: status": {
+    "code": 0,
+    "stdout": "#46 Epic: network access  [open, 14/14 done]\n  #47 Phase 1  [open, 7/7 done]\n    #48    done         L0 - Baseline\n    #49    done         L1 - Flags\n    #50    done         L2 - Listen\n    #51    done         L3 - Phone preview\n    #52    done         L4 - Owner approval of the phone preview\n    #53    done         L5 - Phone layout\n    #54    done         L6 - Owner acceptance\n  #55 Phase 2  [open, 7/7 done, blocked by #47]\n    #56    done         R1 - Flags\n    #57    done         R2 - Sign-in\n    #58    done         R3 - Preview\n    #59    done         R4 - Owner approval\n    #60    done         R5 - Screen\n    #61    done         R6 - Tunnel\n    #62    done         R7 - Owner acceptance\n\ndone 14 | in progress 0 | ready 0 | blocked 0 | needs human 0\nnext: done\n",
+    "stderr": "",
+    "writes": []
+  },
+  "finished: check": {
+    "code": 0,
+    "stdout": "PASS #62 via PR #200 (https://github.com/o/r/pull/200)\nclosed #55: all its sub-issues are closed\nclosed #46: all its sub-issues are closed\n",
+    "stderr": "",
+    "writes": [
+      [
+        "issue",
+        "edit",
+        "62"
+      ],
+      [
+        "issue",
+        "comment",
+        "62"
+      ],
+      [
+        "issue",
+        "close",
+        "55"
+      ],
+      [
+        "issue",
+        "close",
+        "46"
+      ]
+    ]
+  },
+  "gate: next": {
+    "code": 0,
+    "stdout": "{\"action\":\"wait\",\"reason\":\"waiting for a human\",\"issues\":[{\"issue\":52,\"title\":\"L4 - Owner approval of the phone preview\",\"blockedBy\":[]}],\"epic\":46,\"counts\":{\"total\":14,\"done\":4,\"inProgress\":0,\"ready\":0,\"blocked\":6,\"needsHuman\":4},\"closed\":[]}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "gate: next --dry-run": {
+    "code": 0,
+    "stdout": "{\"action\":\"wait\",\"reason\":\"waiting for a human\",\"issues\":[{\"issue\":52,\"title\":\"L4 - Owner approval of the phone preview\",\"blockedBy\":[]}],\"epic\":46,\"counts\":{\"total\":14,\"done\":4,\"inProgress\":0,\"ready\":0,\"blocked\":6,\"needsHuman\":4},\"closed\":[]}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "gate: next --probe --dry-run": {
+    "code": 0,
+    "stdout": "{\"v\":1,\"action\":\"wait\",\"tasks\":[],\"reason\":\"waiting for a human\",\"resource\":null,\"until\":null,\"plan\":null,\"issues\":[\"52\"],\"goals\":null}\n",
+    "stderr": "",
+    "writes": []
+  },
+  "gate: status": {
+    "code": 0,
+    "stdout": "#46 Epic: network access  [open, 4/14 done]\n  #47 Phase 1  [open, 4/7 done]\n    #48    done         L0 - Baseline\n    #49    done         L1 - Flags\n    #50    done         L2 - Listen\n    #51    done         L3 - Phone preview\n    #52    needs human  L4 - Owner approval of the phone preview\n    #53    blocked      L5 - Phone layout (by #52)\n    #54    needs human  L6 - Owner acceptance\n  #55 Phase 2  [open, 0/7 done, blocked by #47]\n    #56    blocked      R1 - Flags (by #47, #54)\n    #57    blocked      R2 - Sign-in (by #47, #56)\n    #58    blocked      R3 - Preview (by #47, #57)\n    #59    needs human  R4 - Owner approval\n    #60    blocked      R5 - Screen (by #47, #59)\n    #61    blocked      R6 - Tunnel (by #47, #60)\n    #62    needs human  R7 - Owner acceptance\n\ndone 4 | in progress 0 | ready 0 | blocked 6 | needs human 4\nnext: wait for a human: #52 L4 - Owner approval of the phone preview\n",
+    "stderr": "",
+    "writes": []
+  },
+  "gate: check": {
+    "code": 1,
+    "stdout": "FAIL #51\n- no merged pull request closes it (the PR body needs \"Closes #51\")\n",
+    "stderr": "",
+    "writes": []
+  }
+}
