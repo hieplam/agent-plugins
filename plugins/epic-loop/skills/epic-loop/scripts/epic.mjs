@@ -201,11 +201,26 @@ function attemptsOf(repo, number) {
 
 const resourcesOf = (t) => t.labels.map((l) => NEEDS.exec(l)?.[1]).filter(Boolean);
 
+// The open issues that hold up the open tasks (spec 2.1): title, number of tasks held up, link. Most tasks first, then lowest number.
+function blockersOf(tasks) {
+  const found = new Map();
+  for (const t of tasks.filter((x) => x.group !== 'done')) {
+    for (const b of t.openBlockers) {
+      const e = found.get(keyOf(b)) ?? { number: b.number, key: String(b.number), title: b.title, blocks: 0, url: `https://github.com/${b.repo}/issues/${b.number}` };
+      e.blocks += 1;
+      found.set(keyOf(b), e);
+    }
+  }
+  return [...found.values()].sort((a, b) => b.blocks - a.blocks || a.number - b.number)
+    .map(({ key, title, blocks, url }) => ({ key, title, blocks, url }));
+}
+
 // The probe line (spec 2.1) from the decision of `decide`: the same facts, in the keys the console reads.
 function probeLine(d, goals = null) {
-  const line = { v: 1, action: d.action, tasks: [], reason: d.action === 'skip' ? '' : (d.reason ?? ''), resource: null, until: null, plan: null, issues: [], goals: null };
+  const line = { v: 1, action: d.action, tasks: [], reason: d.action === 'skip' ? '' : (d.reason ?? ''), resource: null, until: null, plan: null, issues: [], blockers: [], goals: null };
   if (d.action === 'take') line.tasks = d.ready.map((t) => ({ key: String(t.issue), attempt: t.attempt, resources: t.resources }));
   if (d.action === 'wait' || d.action === 'blocked') line.issues = d.issues.map((i) => String(i.issue));
+  if (d.action === 'blocked') line.blockers = d.blockers ?? [];
   if (d.action === 'plan') line.plan = d.plan;
   if (goals?.last) line.goals = { passed: goals.last.passed, total: goals.last.total };
   return line;
@@ -278,11 +293,11 @@ function decide(root, c, { staleHours, closedNow = [], parallel = false, goals =
     return { action: 'take', issue: t.number, title: t.title, attempt: attemptsOf(t.repo, t.number) + 1, path: [...t.path, t.number], ...base };
   }
   const open = c.tasks.filter((t) => t.group !== 'done');
-  if (goals?.refused) return { action: 'blocked', reason: `${goals.path} must exist and be red at opening before a build task starts`, issues: open.map(brief), ...base };
+  if (goals?.refused) return { action: 'blocked', reason: `${goals.path} must exist and be red at opening before a build task starts`, issues: open.map(brief), blockers: blockersOf(open), ...base };
   if (!open.length) return goals ? goalEnd(root, goals, base) : { action: 'done', ...base };
   const gates = open.filter((t) => t.group === 'needs-human' && !t.openBlockers.length);
-  if (gates.length) return { action: 'wait', reason: 'waiting for a human', issues: gates.map(brief), ...base };
-  return { action: 'blocked', reason: 'every open task is blocked', issues: open.map(brief), ...base };
+  if (gates.length) return { action: 'wait', reason: 'waiting for a human', issues: gates.map(brief), blockers: [], ...base };
+  return { action: 'blocked', reason: 'every open task is blocked', issues: open.map(brief), blockers: blockersOf(open), ...base };
 }
 
 // ---------- writing
