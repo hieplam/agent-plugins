@@ -647,3 +647,221 @@ test('an excused release does not spend an attempt, once per comment, and a plai
   const limit = run(['claim', '3', '-R', REPO], lanes({ 2: { state: 'CLOSED' }, 3: { comments: plain } }));
   assert.equal(limit.json.gaveUp, true, 'three plain attempts reach the limit');
 });
+
+// ---------- the goal check: refusal, plan, close on check, Acceptance line (spec 2.1 and 2.10)
+
+const LINE = 'Goal manifest: goals/x.json';
+const OPENED_RED = { opened: { at: NOW, passed: 0, total: 2 }, goals: [{ id: 'G1' }, { id: 'G2' }] };
+const OPENED_GREEN = { opened: { at: NOW, passed: 2, total: 2 }, goals: [{ id: 'G1' }, { id: 'G2' }] };
+const result = (passed, failing, sha) => `loop-goals: ${JSON.stringify({ passed, total: 2, failing, sha })}`;
+const ALL_PASS = result(2, [], 'bbb2222');
+const ONE_FAILS = result(1, ['G2'], 'aaa1111');
+
+// An epic with a goal manifest line, its manifest on the default branch, and its tasks.
+function goalEpic({ manifest = OPENED_RED, comments = [], tasks = [{ n: 2, parent: 1 }], body = LINE } = {}) {
+  const files = manifest ? { 'goals/x.json': JSON.stringify(manifest) } : {};
+  return world([{ n: 1, title: 'Epic', body, comments }, ...tasks], { files });
+}
+const allClosed = [{ n: 2, parent: 1, state: 'CLOSED' }, { n: 3, parent: 1, state: 'CLOSED' }];
+
+test('G10: a manifest file that does not exist gives no build task', () => {
+  const r = run(['next', '1', '-R', REPO], goalEpic({ manifest: null }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.action, 'blocked');
+  assert.match(r.json.reason, /goals\/x\.json/);
+  assert.deepEqual(r.json.issues.map((i) => i.issue), [2]);
+  const tasks = [{ n: 2, parent: 1, body: 'Goal task: yes' }, { n: 3, parent: 1 }];
+  const all = run(['next', '1', '-R', REPO, '--probe'], goalEpic({ manifest: null, tasks }));
+  assert.deepEqual(all.json.tasks.map((t) => t.key), ['2'], 'the parallel list holds no build task');
+});
+
+test('G10: a manifest that passed at opening, or has no opened key, gives no build task', () => {
+  assert.equal(run(['next', '1', '-R', REPO], goalEpic({ manifest: OPENED_GREEN })).json.action, 'blocked');
+  assert.equal(run(['next', '1', '-R', REPO], goalEpic({ manifest: { goals: [{ id: 'G1' }] } })).json.action, 'blocked');
+  const probe = run(['next', '1', '-R', REPO, '--probe'], goalEpic({ manifest: OPENED_GREEN }));
+  assert.equal(probe.json.action, 'blocked');
+  assert.deepEqual(probe.json.tasks, []);
+  assert.deepEqual(probe.json.issues, ['2']);
+});
+
+test('G10: a manifest that was red at opening takes the build task', () => {
+  const r = run(['next', '1', '-R', REPO], goalEpic());
+  assert.equal(r.json.action, 'take');
+  assert.equal(r.json.issue, 2);
+});
+
+test('G10: a refused epic takes only a task with the line "Goal task: yes"', () => {
+  const tasks = [{ n: 2, parent: 1, body: 'Goal task: yes\n\nWrite the goal manifest.' }, { n: 3, parent: 1, body: 'Goal task: yes, some day.' }];
+  const r = run(['next', '1', '-R', REPO], goalEpic({ manifest: null, tasks }));
+  assert.equal(r.json.action, 'take');
+  assert.equal(r.json.issue, 2);
+});
+
+test('G25: closed tasks and a failing row give plan, and the comment comes first', () => {
+  const st = goalEpic({ comments: [ONE_FAILS], tasks: allClosed });
+  const r = run(['next', '1', '-R', REPO], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.action, 'plan');
+  assert.deepEqual(r.json.plan, { key: 'plan-1', failing: ['G2'], sha: 'aaa1111' });
+  assert.equal(issueOf(r, 1).comments.at(-1), 'loop-plan: aaa1111 G2');
+});
+
+test('G25: a plan comment for the same sha blocks the next run', () => {
+  const r = run(['next', '1', '-R', REPO], goalEpic({ comments: [ONE_FAILS, 'loop-plan: aaa1111 G2'], tasks: allClosed }));
+  assert.equal(r.json.action, 'blocked');
+  assert.match(r.json.reason, /aaa1111/);
+  assert.deepEqual(r.writes, []);
+});
+
+test('G25: a new sha plans again', () => {
+  const later = result(1, ['G1'], 'ccc3333');
+  const r = run(['next', '1', '-R', REPO], goalEpic({ comments: [ONE_FAILS, 'loop-plan: aaa1111 G2', later], tasks: allClosed }));
+  assert.equal(r.json.action, 'plan');
+  assert.deepEqual(r.json.plan, { key: 'plan-1', failing: ['G1'], sha: 'ccc3333' });
+  const prefix = run(['next', '1', '-R', REPO], goalEpic({ comments: [result(1, ['G1'], 'aaa'), 'loop-plan: aaa1111 G2'], tasks: allClosed }));
+  assert.equal(prefix.json.action, 'plan', 'a sha that only starts the same is another sha');
+});
+
+test('G25: --dry-run reports plan and writes nothing', () => {
+  const r = run(['next', '1', '-R', REPO, '--dry-run'], goalEpic({ comments: [ONE_FAILS], tasks: allClosed }));
+  assert.equal(r.json.action, 'plan');
+  assert.deepEqual(r.writes, []);
+  assert.equal(issueOf(r, 1).state, 'OPEN');
+});
+
+test('G25: --probe prints the plan case of the probe line', () => {
+  const r = run(['next', '1', '-R', REPO, '--probe'], goalEpic({ comments: [ONE_FAILS], tasks: allClosed }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(Object.keys(r.json), PROBE_KEYS);
+  assert.equal(r.json.action, 'plan');
+  assert.deepEqual(r.json.plan, { key: 'plan-1', failing: ['G2'], sha: 'aaa1111' });
+  assert.deepEqual(r.json.tasks, []);
+  assert.equal(issueOf(r, 1).comments.at(-1), 'loop-plan: aaa1111 G2');
+});
+
+test('G25: a ready task wins over a failing row', () => {
+  const tasks = [{ n: 2, parent: 1, state: 'CLOSED' }, { n: 3, parent: 1 }];
+  const r = run(['next', '1', '-R', REPO], goalEpic({ comments: [ONE_FAILS], tasks }));
+  assert.equal(r.json.action, 'take');
+  assert.equal(r.json.issue, 3);
+  assert.deepEqual(r.writes, []);
+});
+
+test('G26: the last result that parses decides, and only an all-pass result closes the epic', () => {
+  const broken = 'loop-goals: {not json';
+  const pass = run(['next', '1', '-R', REPO], goalEpic({ comments: [ONE_FAILS, ALL_PASS, broken], tasks: allClosed }));
+  assert.equal(pass.json.action, 'done');
+  assert.deepEqual(pass.json.closed, [1]);
+  assert.equal(issueOf(pass, 1).state, 'CLOSED');
+  const fail = run(['next', '1', '-R', REPO, '--dry-run'], goalEpic({ comments: [ALL_PASS, ONE_FAILS, broken], tasks: allClosed }));
+  assert.equal(fail.json.action, 'plan', 'the older pass does not count');
+});
+
+test('G26: failing rows keep the epic open, for next and for check, while its phase closes', () => {
+  const tasks = [{ n: 5, parent: 1, title: 'Phase' }, { n: 2, parent: 5, state: 'CLOSED' }];
+  const r = run(['next', '1', '-R', REPO], goalEpic({ comments: [ONE_FAILS], tasks }));
+  assert.deepEqual(r.json.closed, [5]);
+  assert.equal(issueOf(r, 1).state, 'OPEN');
+  const last = [{ n: 2, parent: 1, state: 'CLOSED', closedBy: mergedPr() }];
+  const c = run(['check', '2', '-R', REPO], goalEpic({ comments: [ONE_FAILS], tasks: last }));
+  assert.equal(c.code, 0, c.stdout + c.stderr);
+  assert.equal(issueOf(c, 1).state, 'OPEN', 'E check does not close a manifest epic: next does, on done');
+});
+
+test('G26: closed tasks and no goal result give blocked', () => {
+  const r = run(['next', '1', '-R', REPO], goalEpic({ tasks: allClosed }));
+  assert.equal(r.json.action, 'blocked');
+  assert.match(r.json.reason, /no goal result/);
+  assert.equal(issueOf(r, 1).state, 'OPEN');
+});
+
+const webTask = (body, files = ['web/app.tsx', 'server/x.ts'], extra = {}) => goalEpic({
+  tasks: [{ n: 2, parent: 1, state: 'CLOSED', closedBy: [{ ...mergedPr(`${VERIFY_BODY}${body}`)[0], files, ...extra }] }],
+});
+const GOOD = '- Acceptance: "pairs": 164, "worstRatio": 0.00024\n';
+
+test('G29: a web/ PR with no Acceptance line fails', () => {
+  const r = run(['check', '2', '-R', REPO, '--dry-run'], webTask(''));
+  assert.equal(r.code, 1, r.stdout);
+  assert.match(r.stdout, /FAIL #2[\s\S]*Acceptance/);
+  const big = run(['check', '2', '-R', REPO, '--dry-run'], webTask('', ['server/x.ts'], { filesTotal: 101 }));
+  assert.equal(big.code, 1, 'over 100 files counts as web/, because the list is cut');
+  assert.match(big.stdout, /Acceptance/);
+});
+
+test('G29: an Acceptance line with only one of the two numbers fails', () => {
+  for (const line of ['Acceptance: pairs 164\n', 'Acceptance: worstRatio 0.1\n', 'Acceptance: pairs: 0, worstRatio: 0.1\n']) {
+    const r = run(['check', '2', '-R', REPO, '--dry-run'], webTask(line));
+    assert.equal(r.code, 1, line);
+    assert.match(r.stdout, /Acceptance/);
+  }
+});
+
+test('G29: an Acceptance line that says "compared" with no number fails', () => {
+  const r = run(['check', '2', '-R', REPO, '--dry-run'], webTask('Acceptance: compared\n'));
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /Acceptance/);
+  const outside = run(['check', '2', '-R', REPO, '--dry-run'], webTask(`\n## Notes\n\n${GOOD}`));
+  assert.equal(outside.code, 1, 'the line must be inside the Verify section');
+});
+
+test('G29: an Acceptance line with both numbers passes', () => {
+  const r = run(['check', '2', '-R', REPO, '--dry-run'], webTask(GOOD));
+  assert.equal(r.code, 0, r.stdout);
+  assert.match(r.stdout, /PASS #2/);
+  assert.equal(run(['check', '2', '-R', REPO, '--dry-run'], webTask('Acceptance: pairs 3 worstRatio 0\n')).code, 0);
+});
+
+test('G29: a PR with no web/ path needs no Acceptance line', () => {
+  const r = run(['check', '2', '-R', REPO, '--dry-run'], webTask('', ['server/x.ts', 'docs/web/y.md']));
+  assert.equal(r.code, 0, r.stdout);
+});
+
+test('G29: a web/ PR of an epic with no manifest line needs no Acceptance line', () => {
+  const st = webTask('');
+  st.issues['1'].body = 'No goal here.';
+  const r = run(['check', '2', '-R', REPO, '--dry-run'], st);
+  assert.equal(r.code, 0, r.stdout);
+});
+
+test('G11: --probe prints the numbers of the last goal result of a manifest epic', () => {
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], goalEpic({ comments: [ALL_PASS, ONE_FAILS] }));
+  assert.equal(r.json.action, 'take');
+  assert.deepEqual(r.json.goals, { passed: 1, total: 2 });
+  assert.equal(run(['next', '1', '-R', REPO, '--dry-run', '--probe'], goalEpic()).json.goals, null, 'no result yet');
+});
+
+test('G11: --probe prints null goals for an epic with no manifest line, also with a result comment', () => {
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], goalEpic({ comments: [ONE_FAILS], body: 'No goal here.' }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.goals, null);
+});
+
+// The golden file holds what epic.mjs did before it knew about goals: stdout, stderr, exit code and writes of each command.
+const GOLDEN = join(HERE, 'golden', 'no-manifest.json');
+const goldenWorlds = () => {
+  const web = { state: 'CLOSED', labels: ['loop:in-progress'], closedBy: [{ ...mergedPr()[0], files: ['web/a.tsx'] }] };
+  return {
+    fresh: { state: network(), task: '48' },
+    finished: {
+      state: network({ ...closed(48, 49, 50, 51, 52, 53, 54, 56, 57, 58, 59, 60, 61), 62: web, 46: { body: 'See the Goal manifest: goals/x.json line.\nGoal manifest: docs/x.json' } }),
+      task: '62',
+    },
+    gate: { state: network({ ...closed(48, 49, 50), 51: { state: 'CLOSED', closedBy: [] } }), task: '51' },
+  };
+};
+function goldenRun() {
+  const out = {};
+  for (const [name, { state, task }] of Object.entries(goldenWorlds())) {
+    const cmds = { next: ['next', '46'], 'next --dry-run': ['next', '46', '--dry-run'], 'next --probe --dry-run': ['next', '46', '--probe', '--dry-run'], status: ['status', '46'], check: ['check', task] };
+    for (const [label, args] of Object.entries(cmds)) {
+      const r = run([...args, '-R', REPO], state);
+      out[`${name}: ${label}`] = { code: r.code, stdout: r.stdout, stderr: r.stderr, writes: r.writes.map((c) => c.slice(0, 3)) };
+    }
+  }
+  return out;
+}
+
+test('no Goal manifest line: behaves as before', () => {
+  assert.deepEqual(goldenRun(), JSON.parse(readFileSync(GOLDEN, 'utf8')));
+});

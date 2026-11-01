@@ -86,6 +86,11 @@ Write them where the repository keeps them (for example `docs/specs/<date>-<topi
 - **A verify task near the end.** It writes a goal manifest (one entry per goal row: the command and its expected
   output) and a committed `goal:check` tool that runs them all, then re-runs `E check --dry-run` on every closed task.
   A goal that fails becomes a fix issue that blocks this task.
+- **Or a goal manifest at the start.** Put the line `Goal manifest: goals/<file>.json` in the epic body. Then the first
+  task carries the body line `Goal task: yes`: it commits the manifest with `"opened":{"at":"<ISO>","passed":0,"total":n}`,
+  and the check must be red. `E next` refuses every other task until then, keeps the epic open while rows fail, and
+  answers `plan` when no task is left (references/tick.md). A task that changes `web/` needs an `Acceptance:` line with
+  the compare result in its PR's `## Verify` section, so write that into its Verify block.
 - **An acceptance task at the end, done by an agent.** It covers what the owner would have done:
   - a committed journey through the real build, at every width and theme the goals name;
   - device emulation in place of real hardware;
