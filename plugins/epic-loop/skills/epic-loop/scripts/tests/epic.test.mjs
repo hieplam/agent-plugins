@@ -523,3 +523,96 @@ test('link is idempotent: an existing "blocked by" link is reported, not an erro
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json.linked, ['#3 is blocked by #2 (already)']);
 });
+
+// ---------- probe mode: next --probe, release --if-claimed / --excused (spec 2.1 and 2.4)
+
+const PROBE_KEYS = ['v', 'action', 'tasks', 'reason', 'resource', 'until', 'plan', 'issues', 'goals'];
+
+test('next --probe prints the probe line, implies --parallel, and lists every ready task', () => {
+  const st = lanes({ 2: { state: 'CLOSED' }, 3: { labels: ['loop:in-progress'], labelEvents: [{ label: 'loop:in-progress', createdAt: hoursAgo(1) }] } });
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, {
+    v: 1, action: 'take', tasks: [{ key: '4', attempt: 1, resources: [] }], reason: '', resource: null, until: null,
+    plan: null, issues: [], goals: null,
+  });
+  const all = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], lanes({ 2: { state: 'CLOSED' } }));
+  assert.deepEqual(all.json.tasks.map((t) => t.key), ['3', '4']);
+});
+
+test('next --probe reads the resources of a task from its needs: labels, and the attempt of each task', () => {
+  const st = lanes({
+    2: { state: 'CLOSED' },
+    3: { labels: ['needs:docker', 'needs:postgres', 'area:web'] },
+    4: { comments: ['loop-attempt: 1', 'loop-release: x'] },
+  });
+  const r = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], st);
+  assert.deepEqual(r.json.tasks, [{ key: '3', attempt: 1, resources: ['docker', 'postgres'] }, { key: '4', attempt: 2, resources: [] }]);
+});
+
+test('next --probe answers wait, blocked, skip and done in the same shape, with issues as strings', () => {
+  const wait = run(['next', '46', '-R', REPO, '--dry-run', '--probe'], network(closed(48, 49, 50, 51)));
+  assert.equal(wait.json.action, 'wait');
+  assert.equal(wait.json.reason, 'waiting for a human');
+  assert.deepEqual(wait.json.issues, ['52']);
+  assert.deepEqual(Object.keys(wait.json), PROBE_KEYS);
+
+  const blocked = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], lanes({ 2: { blockedBy: [3] } }));
+  assert.equal(blocked.json.action, 'blocked');
+  assert.equal(blocked.json.reason, 'every open task is blocked');
+  assert.ok(blocked.json.issues.every((i) => typeof i === 'string') && blocked.json.issues.length > 0);
+  assert.deepEqual(Object.keys(blocked.json), PROBE_KEYS);
+
+  const claimed = { labels: ['loop:in-progress'], labelEvents: [{ label: 'loop:in-progress', createdAt: hoursAgo(1) }] };
+  const skip = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], lanes({ 2: claimed }));
+  assert.equal(skip.json.action, 'skip');
+  assert.deepEqual(skip.json.tasks, []);
+  assert.deepEqual(Object.keys(skip.json), PROBE_KEYS);
+
+  const finished = lanes({ 2: { state: 'CLOSED' }, 3: { state: 'CLOSED' }, 4: { state: 'CLOSED' }, 5: { state: 'CLOSED' } });
+  finished.issues['1'].state = 'CLOSED';
+  const done = run(['next', '1', '-R', REPO, '--dry-run', '--probe'], finished);
+  assert.equal(done.json.action, 'done');
+  assert.deepEqual(Object.keys(done.json), PROBE_KEYS);
+});
+
+test('release --if-claimed does nothing, and writes nothing, when the task has no work label', () => {
+  const st = lanes({ 2: { state: 'CLOSED' } });
+  const r = run(['release', '2', '-R', REPO, '--if-claimed', '--excused', '--reason', 'usage limit'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { released: false, issue: 2 });
+  assert.deepEqual(r.writes, []);
+  assert.equal(issueOf(r, 2).state, 'CLOSED', 'a closed issue stays closed');
+});
+
+test('release --if-claimed releases a claimed task like a plain release', () => {
+  const st = lanes({ 3: { labels: ['loop:in-progress'], comments: ['loop-attempt: 1'] } });
+  const r = run(['release', '3', '-R', REPO, '--if-claimed', '--reason', 'the run ended'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.released, true);
+  assert.deepEqual(issueOf(r, 3).labels, []);
+  assert.match(issueOf(r, 3).comments.at(-1), /^loop-release: the run ended/);
+  assert.doesNotMatch(issueOf(r, 3).comments.at(-1), /loop-excused/);
+});
+
+test('release --excused adds a loop-excused line, and --if-claimed needs no --reason', () => {
+  const st = lanes({ 3: { labels: ['loop:in-progress'], comments: ['loop-attempt: 1'] } });
+  const r = run(['release', '3', '-R', REPO, '--if-claimed', '--excused', '--reason', 'usage limit'], st);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(issueOf(r, 3).comments.at(-1), /^loop-release: usage limit[\s\S]*^loop-excused: usage limit$/m);
+  const bare = run(['release', '3', '-R', REPO, '--if-claimed', '--excused'], st);
+  assert.equal(bare.code, 0, bare.stderr);
+  assert.match(issueOf(bare, 3).comments.at(-1), /^loop-excused: \S/m);
+  assert.equal(run(['release', '3', '-R', REPO], st).code, 2, 'a plain release still needs --reason');
+});
+
+test('an excused release does not spend an attempt, once per comment, and a plain one does', () => {
+  const both = 'loop-release: x\n\nloop-found: #9 (each now blocks this task)\n\nloop-excused: x';
+  const comments = ['loop-attempt: 1', 'loop-release: usage limit\n\nloop-excused: usage limit', 'loop-attempt: 2', both, 'loop-attempt: 3', 'loop-release: plain'];
+  const r = run(['claim', '3', '-R', REPO], lanes({ 2: { state: 'CLOSED' }, 3: { comments } }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.attempt, 2, 'three attempts, two excused comments (the one with both lines counts once), so one is spent');
+  const plain = ['loop-attempt: 1', 'loop-release: a', 'loop-attempt: 2', 'loop-release: b', 'loop-attempt: 3', 'loop-release: c'];
+  const limit = run(['claim', '3', '-R', REPO], lanes({ 2: { state: 'CLOSED' }, 3: { comments: plain } }));
+  assert.equal(limit.json.gaveUp, true, 'three plain attempts reach the limit');
+});

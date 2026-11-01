@@ -6,16 +6,22 @@
 // is stored locally: every command reads GitHub again, so a fresh session picks up exactly where the last one stopped.
 //
 //   status <epic> [--json]                         every task: done / in progress / needs human / blocked / ready
-//   next <epic> [--dry-run] [--parallel]           the decision of one run, one JSON line: take | skip | wait | blocked | done
+//   next <epic> [--dry-run] [--parallel] [--probe] the decision of one run, one JSON line: take | skip | wait | blocked | done
 //                                                  (also closes phases and the epic once all their sub-issues are closed);
-//                                                  --parallel: take even while tasks are in progress, and list every ready task
+//                                                  --parallel: take even while tasks are in progress, and list every ready task;
+//                                                  --probe: imply --parallel and print the probe line of the console (spec 2.1):
+//                                                  v, action, tasks [{key, attempt, resources from "needs:<name>" labels}],
+//                                                  reason, resource, until, plan, issues (strings), goals
 //   claim <task> [--epic <n>] [--note "<text>"] [--parallel]
 //                                                  take a ready task: label loop:in-progress, comment "loop-attempt: <k>";
 //                                                  --parallel allows it while other tasks of the epic are in progress
-//   release <task> --reason "<why>" [--needs-human] [--found <n,...>]
+//   release <task> --reason "<why>" [--needs-human] [--found <n,...>] [--if-claimed] [--excused]
 //                                                  hand it back to the queue, or to a human; reopens it if closed;
 //                                                  --found: the attempt found defects filed as issues <n,...>: each joins the
-//                                                  epic and blocks the task, and the attempt does not count toward the limit
+//                                                  epic and blocks the task, and the attempt does not count toward the limit;
+//                                                  --excused: add a "loop-excused: <reason>" line; the attempt does not count either;
+//                                                  --if-claimed: do nothing (print {"released":false}) when the task carries no
+//                                                  work label; --reason is optional with --excused or --if-claimed
 //   check <task> [--dry-run] [--evidence <path> --heading "<text>"]
 //                                                  really done? closed by a merged PR whose body has a "## Verify" section
 //                                                  naming Red, Green and Stub; PASS removes the label, closes finished parents
@@ -43,6 +49,8 @@ const STYLE = {
 };
 const ATTEMPT = /^loop-(attempt|baseline):/;            // loop-baseline: is what the older loop.js / loop.mjs wrote
 const FOUND = /^loop-found: /m;                         // in a loop-release: comment: the attempt filed real defects
+const EXCUSED = /^loop-excused: /m;                     // in a loop-release: comment: a limit or a restart ended the attempt
+const NEEDS = /^needs:(.+)$/;                           // a task label that names a resource the task uses
 const GROUP = { done: 'done', 'in-progress': 'in progress', ready: 'ready', blocked: 'blocked', 'needs-human': 'needs human' };
 const NOW = process.env.EPIC_LOOP_NOW ? new Date(process.env.EPIC_LOOP_NOW) : new Date();
 
@@ -168,12 +176,23 @@ function labeledAt(repo, number) {
   return last ? new Date(last.createdAt) : null;
 }
 const hoursSince = (d) => (d ? Math.round(((NOW - d) / 3600e3) * 10) / 10 : null);
-// Attempts that ended by filing a real defect (release --found) are not failures of the task, so they do not count.
+// Attempts that ended by filing a real defect (release --found) or by an excuse (release --excused: a usage limit, a
+// restart) are not failures of the task, so they do not count. A comment with both lines excuses one attempt.
 function attemptsOf(repo, number) {
   const bodies = issueQuery(Q_COMMENTS, repo, number).comments.nodes.map((c) => c.body);
   const tries = bodies.filter((b) => ATTEMPT.test(b)).length;
-  const excused = bodies.filter((b) => b.startsWith('loop-release:') && FOUND.test(b)).length;
+  const excused = bodies.filter((b) => b.startsWith('loop-release:') && (FOUND.test(b) || EXCUSED.test(b))).length;
   return Math.max(0, tries - excused);
+}
+
+const resourcesOf = (t) => t.labels.map((l) => NEEDS.exec(l)?.[1]).filter(Boolean);
+
+// The probe line (spec 2.1) from the decision of `decide`: the same facts, in the keys the console reads.
+function probeLine(d) {
+  const line = { v: 1, action: d.action, tasks: [], reason: d.action === 'skip' ? '' : (d.reason ?? ''), resource: null, until: null, plan: null, issues: [], goals: null };
+  if (d.action === 'take') line.tasks = d.ready.map((t) => ({ key: String(t.issue), attempt: t.attempt, resources: t.resources }));
+  if (d.action === 'wait' || d.action === 'blocked') line.issues = d.issues.map((i) => String(i.issue));
+  return line;
 }
 
 function counts(tasks) {
@@ -191,7 +210,8 @@ function decide(root, c, { staleHours, closedNow = [], parallel = false }) {
   if (parallel && ready.length) {
     const t = ready[0];
     return { action: 'take', issue: t.number, title: t.title, attempt: attemptsOf(t.repo, t.number) + 1, path: [...t.path, t.number],
-      ready: ready.map((x) => ({ issue: x.number, title: x.title })), inProgress: c.holders.map((h) => h.number), ...base };
+      ready: ready.map((x) => ({ issue: x.number, title: x.title, attempt: attemptsOf(x.repo, x.number) + 1, resources: resourcesOf(x) })),
+      inProgress: c.holders.map((h) => h.number), ...base };
   }
   if (c.holders.length) {
     const h = c.holders[0];
@@ -328,7 +348,8 @@ function cmdNext(repo, n, flags) {
   const root = loadTree(repo, n);
   const c = classify(root);
   const closedNow = flags['dry-run'] ? [] : sweep(root);
-  console.log(JSON.stringify(decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow, parallel: Boolean(flags.parallel) })));
+  const d = decide(root, c, { staleHours: Number(flags['stale-hours'] ?? 6), closedNow, parallel: Boolean(flags.parallel || flags.probe) });
+  console.log(JSON.stringify(flags.probe ? probeLine(d) : d));
 }
 
 function cmdClaim(repo, n, flags) {
@@ -362,11 +383,16 @@ function cmdClaim(repo, n, flags) {
 }
 
 function cmdRelease(repo, n, flags) {
-  if (!flags.reason) throw new Usage('release needs --reason "<why>"');
+  if (!flags.reason && !flags.excused && !flags['if-claimed']) throw new Usage('release needs --reason "<why>"');
+  const reason = flags.reason || (flags.excused ? 'the run ended before the task was done (excused)' : 'the run ended before the task was done');
   const found = flags.found.map((v) => num(v, '--found <n>'));
   if (found.includes(n)) throw new Usage(`--found names #${n} itself`);
   const parents = found.map((f) => issueQuery(Q_PARENT, repo, f).parent);   // also proves each found issue exists
   const info = issueQuery(Q_CLOSING, repo, n);
+  if (flags['if-claimed'] && !info.labels.nodes.some((l) => WORK_SEEN.includes(l.name))) {
+    console.log(JSON.stringify({ released: false, issue: n }));
+    return;
+  }
   const reopened = info.state !== 'OPEN';
   if (reopened) gh(['issue', 'reopen', String(n), '-R', repo]);
   for (const l of info.labels.nodes.map((x) => x.name).filter((x) => WORK_SEEN.includes(x))) gh(['issue', 'edit', String(n), '-R', repo, '--remove-label', l]);
@@ -377,7 +403,8 @@ function cmdRelease(repo, n, flags) {
     found.forEach((f, i) => { if (!parents[i] && !(epic.repo === repo && epic.number === n)) addSubIssue(repo, epic.number, f); addBlockedBy(repo, n, f); });
   }
   const foundLine = found.length ? `loop-found: ${found.map((f) => `#${f}`).join(', ')} (each now blocks this task; this attempt does not count toward the attempt limit)\n\n` : '';
-  comment(repo, n, `loop-release: ${flags.reason}\n\n${foundLine}${label ? `Waiting for a human (\`${label}\`): a loop will not take this task until that label is removed.` : 'Back in the queue: the next run can take it again.'}`);
+  const excusedLine = flags.excused ? `loop-excused: ${reason.split(/\r?\n/)[0]}\n\n` : '';
+  comment(repo, n, `loop-release: ${reason}\n\n${foundLine}${excusedLine}${label ? `Waiting for a human (\`${label}\`): a loop will not take this task until that label is removed.` : 'Back in the queue: the next run can take it again.'}`);
   console.log(JSON.stringify({ released: true, issue: n, needsHuman: Boolean(label), reopened, ...(found.length ? { found } : {}) }));
 }
 
@@ -568,7 +595,7 @@ function parse(argv) {
     if (!a.startsWith('--')) { pos.push(a); continue; }
     const eq = a.indexOf('=');
     const name = eq > 0 ? a.slice(2, eq) : a.slice(2);
-    if (['dry-run', 'json', 'needs-human', 'parallel'].includes(name)) { flags[name] = true; continue; }
+    if (['dry-run', 'json', 'needs-human', 'parallel', 'probe', 'if-claimed', 'excused'].includes(name)) { flags[name] = true; continue; }
     const value = eq > 0 ? a.slice(eq + 1) : argv[++i];
     if (value === undefined) throw new Usage(`--${name} needs a value`);
     if (name === 'blocked-by' || name === 'blocks' || name === 'found') flags[name].push(...value.split(',').map((v) => v.trim()).filter(Boolean));
@@ -578,8 +605,8 @@ function parse(argv) {
   return { flags, pos };
 }
 
-const USAGE = 'usage: epic.mjs status <epic> [--json] | next <epic> [--dry-run] [--parallel] | claim <task> [--epic <n>] [--note "..."] [--parallel] | ' +
-  'release <task> --reason "..." [--needs-human] [--found <n,...>] | check <task> [--dry-run] [--evidence <path> --heading "..."] | ' +
+const USAGE = 'usage: epic.mjs status <epic> [--json] | next <epic> [--dry-run] [--parallel] [--probe] | claim <task> [--epic <n>] [--note "..."] [--parallel] | ' +
+  'release <task> --reason "..." [--needs-human] [--found <n,...>] [--if-claimed] [--excused] | check <task> [--dry-run] [--evidence <path> --heading "..."] | ' +
   'link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>] | unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>] | ' +
   'create <manifest.json> [--dry-run]   (options: -R owner/name, --stale-hours, --max-attempts)';
 

@@ -1,12 +1,13 @@
 {
   "skill_name": "epic-loop",
   "kind": "skill",
-  "oracle": "Tick cases run against a fake GitHub: scripts/epic.mjs loads scripts/tests/fake-gh.mjs instead of the gh CLI (EPIC_LOOP_GH_MODULE) and reads and writes the world in {scratch}/state.json, which starts as a copy of an evals/fixtures/*.json file. A tick case passes when the reply's last line is the JSON of references/tick.md step 7 with the expected result, and the world is unchanged (these cases must not write). Trigger cases are judged on the transcript: whether the Skill tool loads epic-loop, and what the session does next.",
+  "oracle": "Tick cases run against a fake GitHub: scripts/epic.mjs loads scripts/tests/fake-gh.mjs instead of the gh CLI (EPIC_LOOP_GH_MODULE) and reads and writes the world in {scratch}/state.json, which starts as a copy of an evals/fixtures/*.json file. A tick case passes when the reply's last line is the JSON of references/tick.md step 7 with the expected result, and the world is unchanged (these cases must not write). Trigger cases are judged on the transcript: whether the Skill tool loads epic-loop, and what the session does next. Console-mode cases also log every call of the fake gh in {scratch}/calls.log (EPIC_LOOP_FAKE_LOG), and a check fails when the log holds a query that the run was told to skip.",
   "env": {
     "GH_TOKEN": "invalid-token-so-evals-cannot-touch-real-github",
     "EPIC_LOOP_GH_MODULE": "{scratch}/.claude/skills/epic-loop/scripts/tests/fake-gh.mjs",
     "EPIC_LOOP_FAKE_STATE": "{scratch}/state.json",
-    "EPIC_LOOP_NOW": "2026-10-21T12:00:00Z"
+    "EPIC_LOOP_NOW": "2026-10-21T12:00:00Z",
+    "EPIC_LOOP_FAKE_LOG": "{scratch}/calls.log"
   },
   "evals": [
     {
@@ -100,6 +101,32 @@
         {
           "path": "README.md",
           "content": "# Notes\n\nA small notes web app. You will recieve an email when a note is shared.\n"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "console-claimed-task-skips-next-and-claim",
+      "prompt": "[Castraferrum] The console claimed task 49 for this run (action take). Do not run next or claim. Do this task only.\n\nThe epic is #46 of o/r, and you use the epic-loop skill. Read references/tick.md of the skill first. This is a test of the console mode: do no work on the task and stop at once. Reply that the run is BLOCKED, and end with the JSON line of tick.md step 7 with \"result\":\"BLOCKED\" and \"issue\":49, as plain text and not in a code fence. Change nothing.",
+      "expected_output": "The session loads the epic-loop skill and sees that the first line of the prompt starts with `[Castraferrum] The console claimed task`. It skips steps 1 and 2 of references/tick.md: it does not run `epic.mjs next`, does not run `epic.mjs claim`, and never reads the graph of the epic (no `query EpicNode` in the log of the fake gh). It does not release, label or comment on issue 49. It stops as told and the reply ends with one plain JSON line (no code fence) with \"result\":\"BLOCKED\" and \"issue\":49.",
+      "files": [
+        {
+          "path": "state.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/in-progress.json"
+        },
+        {
+          "path": "state.orig.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/in-progress.json"
+        },
+        {
+          "path": "calls.log",
+          "content": ""
+        }
+      ],
+      "checks": [
+        {
+          "name": "last-line-blocked-49-nothing-written-and-no-epic-query",
+          "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result BLOCKED --issue 49 --state {scratch}/state.json --orig {scratch}/state.orig.json --calls {scratch}/calls.log --no-query EpicNode"
         }
       ]
     }

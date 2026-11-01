@@ -11,6 +11,18 @@ never got another turn. The schedule is the loop; this run is one turn of it.
 
 Below, `E` stands for `node "<skill dir>/scripts/epic.mjs"`. Run it in the repository's main checkout, or add `-R owner/name`.
 
+## Console mode: the task is already claimed
+
+If the first line of your prompt starts with `[Castraferrum] The console claimed task`, the console already ran `E next`
+and `E claim` for this run. The line names the task `<key>` and the action (`take` or `plan`). Skip steps 1 and 2: do not
+run `next`, do not run `claim`, and do not read the epic's graph (no `query EpicNode`). Go on to step 3 with that task
+only, and end at step 5, 6 or 7 as usual. Another line, `[Castraferrum] The usage limit has reset. Continue the same task
+from where you stopped.`, resumes a run that stopped at a usage limit: continue that task, do not start over.
+
+When a run cannot continue for a cause that is not the task's fault (a usage limit, a restart), release it as excused:
+`E release <n> --if-claimed --excused`. The comment gets a `loop-excused:` line and the attempt does not count.
+`--if-claimed` does nothing when the task has no work label, so a run that already finished never reopens a closed issue.
+
 ## 1. Decide
 
     E next <epic>
@@ -98,7 +110,8 @@ left and what blocks it. Then release the task:
 
 ## 7. Last line
 
-End your reply with exactly one JSON line. Castraferrum shows it as the run's summary.
+End your reply with exactly one JSON line. Castraferrum shows it as the run's summary. Write the line as plain text,
+not inside a code fence: the console reads the last non-empty line of the reply, and a closing fence would be that line.
 
     {"epic":<e>,"issue":<n or null>,"result":"DONE|SKIP|WAITING|BLOCKED|GAVE_UP|RELEASED|EPIC_DONE|DRY_RUN","pr":"<url or null>","progress":"<done>/<total> done","note":"<one sentence>"}
 
