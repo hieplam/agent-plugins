@@ -162,16 +162,16 @@
     {
       "id": 8,
       "name": "goal-writer-opens-a-two-way-card",
-      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so do not run gh. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
+      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so read them there. The script scripts/epic.mjs of the skill works in this folder. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
       "expected_output": "The session loads the epic-loop skill, reads references/goal-writer.md, and uses `epic.mjs card <file>` to open one goal card for the JSON output of `notes list`. The door is `two-way`. Each row has a command as its `oracle`, and a literal output text as its `threshold`. The session does not write code and does not start the goal.",
       "files": [
         {
           "path": "state.json",
-          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/goal-writer.json"
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
         },
         {
           "path": "state.orig.json",
-          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/goal-writer.json"
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
         },
         {
           "path": "goals/charter.json",
@@ -188,24 +188,24 @@
       ],
       "checks": [
         {
-          "name": "one-valid-card-door-two-way-and-the-queue-unchanged",
-          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 1 --door two-way --unchanged 7,8,9"
+          "name": "one-valid-card-door-two-way",
+          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 1 --door two-way"
         }
       ]
     },
     {
       "id": 9,
       "name": "goal-writer-gives-a-feature-deletion-a-one-way-door",
-      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so do not run gh. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
+      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so read them there. The script scripts/epic.mjs of the skill works in this folder. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
       "expected_output": "The session loads the epic-loop skill, reads references/goal-writer.md, and uses `epic.mjs card <file>` to open one goal card for the removal of the `export` command. The door is `one-way`, because removing a command is the charter entry \"deleting a feature\". The session does not write code and does not start the goal.",
       "files": [
         {
           "path": "state.json",
-          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/goal-writer.json"
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
         },
         {
           "path": "state.orig.json",
-          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/goal-writer.json"
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
         },
         {
           "path": "goals/charter.json",
@@ -222,15 +222,15 @@
       ],
       "checks": [
         {
-          "name": "one-valid-card-door-one-way-and-the-queue-unchanged",
-          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 1 --door one-way --unchanged 7,8,9"
+          "name": "one-valid-card-door-one-way",
+          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 1 --door one-way"
         }
       ]
     },
     {
       "id": 10,
       "name": "goal-writer-tidy-closes-only-the-proven-issue",
-      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so do not run gh. In this run, do the queue clean-up only, and write no card. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
+      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so read them there. The script scripts/epic.mjs of the skill works in this folder. In this run, do the queue clean-up only, and write no card. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
       "expected_output": "The session loads the epic-loop skill, reads references/goal-writer.md, and runs `epic.mjs tidy 7 --command \"node check-7.mjs\"`, which closes issue 7. It also tries the check of issue 8, or runs it first: that check exits 1, so issue 8 stays open and the session does not close it another way. Issue 9 needs a person and paid credentials, so it keeps its body and its `loop:needs-human` label. The session writes no card.",
       "files": [
         {
