@@ -38,7 +38,9 @@ Choose the one goal that serves the charter most. Failing standing goals come fi
 - `title`: the goal in a few words.
 - `rows`: one or more rows.
   - `outcome`: what a user sees.
-  - `oracle`: a command. The goal check runs this command, so it is not a description.
+  - `oracle`: a command. The goal check runs this command, so it is not a description. It fails today, because the
+    goal is not built. Do not run it first. Do not build what it needs. If the card is hard to prove, still write the
+    best command that you can name.
   - `threshold`: a literal text of the output of that command when the row passes.
 - `size.planWindows`: your estimate, in units of one 5-hour plan window. It is above 0.
 - `door`:
