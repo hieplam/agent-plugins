@@ -38,7 +38,8 @@ A limit in the prompt overrides this section. If the prompt says "write no card"
 `E card`. Go to section 4.
 
 Choose the one goal that serves the charter most. Failing standing goals come first, then open ideas, then
-`docs/VISION.md`. Write it to a file, in this shape:
+`docs/VISION.md`. An empty issue list is a normal result: then take the goal from `docs/VISION.md`. Write it to a file,
+in this shape:
 
     {"v":1,"title":"...","rows":[{"id":"G1","outcome":"...","oracle":"...","threshold":"..."}],"size":{"planWindows":0.5},"door":"two-way","next":["..."]}
 
@@ -48,7 +49,8 @@ Choose the one goal that serves the charter most. Failing standing goals come fi
   - `oracle`: a command. The goal check runs this command, so it is not a description. It fails today, because the
     goal is not built. Do not run it first. Do not build what it needs. If the card is hard to prove, still write the
     best command that you can name.
-  - `threshold`: a literal text of the output of that command when the row passes.
+  - `threshold`: a text that the command prints, word for word, when the row passes, for example `["buy milk"]`. It
+    is never a sentence about the output.
 - `size.planWindows`: your estimate, in units of one 5-hour plan window. It is above 0.
 - `door`:
   - `two-way`: the change can be undone.
@@ -62,6 +64,7 @@ says that a card is open, write nothing more.
 
 ## 4. End
 
-Write one card, then end. Do not start the goal, do not open an epic, and do not write code. End your reply with the
+Write one card, then end. Do not start the goal, do not open an epic, and do not write code. In your reply, give the
+door of the card, and the `oracle` and `threshold` of each row, word for word. End your reply with the
 JSON line of references/tick.md step 7, with `"epic":null`, `"issue":<the card>` and `"result":"DONE"`. With no card,
 use `"issue":null` and `"result":"SKIP"`.
