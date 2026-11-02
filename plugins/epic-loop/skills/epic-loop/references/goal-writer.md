@@ -10,7 +10,7 @@ If the repository has no `goals/charter.json`, change nothing and end.
 
 - `goals/charter.json`: what the product is for, and the `neverAlone` list.
 - The open issues: `gh issue list -R <o/r> --state open --limit 200 --json number,title,labels,body`. If the prompt
-  names a file that holds them, read that file and do not run `gh`. These issues hold:
+  names a file that holds them, read that file in place of this command. These issues hold:
   - the open epics;
   - the ideas, for example with the label `idea` or `y-tuong`;
   - the failing standing goals, with the label `standing-goal`.
