@@ -30,6 +30,9 @@ Do each clean-up that has proof. Leave every other issue as it is.
 
 ## 3. Write one card
 
+A limit in the prompt overrides this section. If the prompt says "write no card" or "clean-up only", do not run
+`E card`. Go to section 4.
+
 Choose the one goal that serves the charter most. Failing standing goals come first, then open ideas, then
 `docs/VISION.md`. Write it to a file, in this shape:
 
