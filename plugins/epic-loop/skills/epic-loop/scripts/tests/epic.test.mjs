@@ -21,7 +21,7 @@ function world(issues, { labels = ['loop:in-progress', 'loop:needs-human'], file
   const s = { repo: REPO, defaultBranch: 'main', nextNumber: 100, labels: [...labels], files, issues: {} };
   for (const i of issues) {
     s.issues[String(i.n)] = {
-      title: i.title || `Issue ${i.n}`, body: i.body || '', state: i.state || 'OPEN', labels: i.labels || [],
+      title: i.title || `Issue ${i.n}`, body: i.body || '', state: i.state || 'OPEN', labels: i.labels || [], author: i.author,
       parent: i.parent ?? null, children: [], blockedBy: i.blockedBy || [], comments: i.comments || [],
       labelEvents: i.labelEvents || [], closedBy: i.closedBy || [],
     };
@@ -1058,6 +1058,22 @@ test('tidy: a closed issue refuses, and the command does not run', () => {
   assert.match(r.stderr, /#7 is closed/);
   assert.throws(() => readFileSync(mark));
   assert.equal(r.writes.length, 0);
+});
+
+test('tidy: an issue by another author refuses, the command does not run, and --rewrite writes nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'epic-loop-tidy-'));
+  writeFileSync(join(dir, 'mark.mjs'), "import { writeFileSync } from 'node:fs'; writeFileSync(process.argv[2], 'ran');\n");
+  writeFileSync(join(dir, 'body.md'), 'New\n');
+  const mark = join(dir, 'ran.txt');
+  const stranger = () => world([{ n: 7, author: 'stranger', labels: ['loop:needs-human'] }]);
+  const r = run(['tidy', '7', '-R', REPO, '--command', `node "${join(dir, 'mark.mjs')}" "${mark}"`], stranger());
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /#7 is by stranger, not by the owner/);
+  assert.throws(() => readFileSync(mark));
+  assert.equal(r.writes.length, 0);
+  const w = run(['tidy', '7', '-R', REPO, '--rewrite', join(dir, 'body.md'), '--reason', 'x'], stranger());
+  assert.equal(w.code, 1);
+  assert.equal(w.writes.length, 0);
 });
 
 test('tidy: --rewrite edits the body, removes loop:needs-human, and comments the reason', () => {

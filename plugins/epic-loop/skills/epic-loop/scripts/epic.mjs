@@ -37,7 +37,8 @@
 //   create <manifest.json> [--dry-run]             create an epic, its phases and tasks, and every link (references/plan.md)
 //   card <file>                                    open the goal card in <file> as the issue "Goal card: <title>", label goal-card;
 //                                                  refuses a bad card (spec 2.13) or a second open card; prints {"card":<n>}
-//   tidy <n> --command "<cmd>"                     run the command; only if it exits 0, close <n> with a loop-tidy: comment
+//   tidy <n> --command "<cmd>"                     run the command; only if it exits 0, close <n> with a loop-tidy: comment;
+//                                                  both forms of tidy refuse an issue by anyone but the owner of the repository
 //   tidy <n> --rewrite <file> --reason "<why>"     replace the body, remove loop:needs-human, and comment the reason
 //
 // Options: -R <owner/name> (default: the repository of the current directory), --stale-hours <h> (default 6),
@@ -122,6 +123,8 @@ const Q_COMMENTS = `query Comments($owner: String!, $name: String!, $number: Int
   issue(number: $number) { comments(last: 100) { nodes { body } } } } }`;
 const Q_BODY = `query IssueBody($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { body } } }`;
+const Q_AUTHOR = `query IssueAuthor($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+  issue(number: $number) { author { login } } } }`;
 const Q_CLOSING_FILES = `query ClosingFiles($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { merged files(first: 100) { totalCount nodes { path } } } } } } }`;
 const Q_CLOSING = `query Closing($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
@@ -710,6 +713,9 @@ function cmdTidy(repo, n, flags) {
   const body = flags.rewrite ? readFileSync(resolve(flags.rewrite), 'utf8') : null;
   const info = issueQuery(Q_CLOSING, repo, n);
   if (info.state !== 'OPEN') throw new Refused(`#${n} is closed`);
+  // An issue by anyone else is untrusted: a stranger's text must never choose what runs or what closes.
+  const author = issueQuery(Q_AUTHOR, repo, n).author?.login;
+  if (author !== repo.split('/')[0]) throw new Refused(`#${n} is by ${author ?? 'an unknown author'}, not by the owner of ${repo}: tidy leaves it as it is`);
   if (flags.command) {
     const r = spawnSync(flags.command, { shell: true, encoding: 'utf8', timeout: TIDY_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
     if (r.status !== 0) throw new Refused(`#${n} stays open: the command ended with exit code ${r.status ?? r.signal ?? r.error?.message}`);
