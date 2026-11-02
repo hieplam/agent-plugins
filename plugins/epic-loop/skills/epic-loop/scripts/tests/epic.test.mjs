@@ -21,7 +21,7 @@ function world(issues, { labels = ['loop:in-progress', 'loop:needs-human'], file
   const s = { repo: REPO, defaultBranch: 'main', nextNumber: 100, labels: [...labels], files, issues: {} };
   for (const i of issues) {
     s.issues[String(i.n)] = {
-      title: i.title || `Issue ${i.n}`, body: i.body || '', state: i.state || 'OPEN', labels: i.labels || [],
+      title: i.title || `Issue ${i.n}`, body: i.body || '', state: i.state || 'OPEN', labels: i.labels || [], author: i.author,
       parent: i.parent ?? null, children: [], blockedBy: i.blockedBy || [], comments: i.comments || [],
       labelEvents: i.labelEvents || [], closedBy: i.closedBy || [],
     };
@@ -939,4 +939,170 @@ function goldenRun() {
 
 test('no Goal manifest line: behaves as before', () => {
   assert.deepEqual(goldenRun(), JSON.parse(readFileSync(GOLDEN, 'utf8')));
+});
+
+// ---------- card: the goal writer opens one goal card
+
+const CARD = {
+  v: 1, title: 'Export notes as JSON',
+  rows: [{ id: 'G1', outcome: 'A user exports notes as JSON', oracle: 'node --test tests/export.test.mjs', threshold: '# pass 3' }],
+  size: { planWindows: 0.5 }, door: 'two-way', next: ['Import notes from JSON'],
+};
+function cardRun(card, state) {
+  const dir = mkdtempSync(join(tmpdir(), 'epic-loop-card-'));
+  const file = join(dir, 'card.json');
+  writeFileSync(file, typeof card === 'string' ? card : JSON.stringify(card));
+  return run(['card', file, '-R', REPO], state);
+}
+const noCardLabel = () => world([{ n: 1, title: 'Old work' }]);
+
+test('card: a valid card opens one issue with one fenced json block', () => {
+  const r = cardRun(CARD, world([{ n: 1 }], { labels: ['goal-card'] }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { card: 100 });
+  const i = issueOf(r, 100);
+  assert.equal(i.title, 'Goal card: Export notes as JSON');
+  assert.deepEqual(i.labels, ['goal-card']);
+  const blocks = [...i.body.matchAll(/^```json\n([\s\S]*?)^```$/gm)];
+  assert.equal(blocks.length, 1);
+  assert.deepEqual(JSON.parse(blocks[0][1]), CARD);
+});
+
+test('card: it makes the label when the repository has none', () => {
+  const r = cardRun(CARD, noCardLabel());
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(r.state.labels.includes('goal-card'));
+  assert.deepEqual(issueOf(r, 100).labels, ['goal-card']);
+});
+
+test('card: an open goal-card issue refuses, with no write', () => {
+  const r = cardRun(CARD, world([{ n: 7, title: 'Goal card: other', labels: ['goal-card'] }], { labels: ['goal-card'] }));
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /goal card #7 is open/);
+  assert.equal(r.writes.length, 0);
+  assert.equal(r.state.issues['100'], undefined);
+});
+
+test('card: a closed goal-card issue does not refuse', () => {
+  const r = cardRun(CARD, world([{ n: 7, labels: ['goal-card'], state: 'CLOSED' }], { labels: ['goal-card'] }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { card: 100 });
+});
+
+test('card: text that is not JSON refuses, with no call', () => {
+  const r = cardRun('{"v":1,', noCardLabel());
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /not valid JSON/);
+  assert.equal(r.calls.length, 0);
+});
+
+test('card: no rows refuses, with no write', () => {
+  const r = cardRun({ ...CARD, rows: [] }, noCardLabel());
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /rows/);
+  assert.equal(r.writes.length, 0);
+});
+
+test('card: each bad top field refuses by name', () => {
+  const bad = {
+    v: { ...CARD, v: 2 }, title: { ...CARD, title: ' ' }, door: { ...CARD, door: 'one way' },
+    planWindows: { ...CARD, size: { planWindows: 0 } }, next: { ...CARD, next: [] },
+  };
+  for (const [field, card] of Object.entries(bad)) {
+    const r = cardRun(card, noCardLabel());
+    assert.equal(r.code, 1, field);
+    assert.match(r.stderr, new RegExp(`\\b${field}\\b`), field);
+    assert.equal(r.writes.length, 0, field);
+  }
+});
+
+test('card: each bad row field refuses by name', () => {
+  const row = CARD.rows[0];
+  const bad = {
+    id: [row, { ...row }], outcome: [{ ...row, outcome: '' }], oracle: [{ ...row, oracle: 3 }], threshold: [{ id: 'G1', outcome: 'x', oracle: 'y' }],
+    fence: [{ ...row, threshold: 'a ``` b' }],
+  };
+  for (const [field, rows] of Object.entries(bad)) {
+    const r = cardRun({ ...CARD, rows }, noCardLabel());
+    assert.equal(r.code, 1, field);
+    assert.match(r.stderr, new RegExp(`\\b${field}\\b`), field);
+    assert.equal(r.writes.length, 0, field);
+  }
+});
+
+// ---------- tidy: the goal writer cleans the queue, only on proof
+
+test('tidy: a command that exits 0 closes the issue with a loop-tidy comment', () => {
+  const r = run(['tidy', '7', '-R', REPO, '--command', 'node -e "process.exit(0)"'], world([{ n: 7 }]));
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { tidied: 7, closed: true });
+  assert.equal(issueOf(r, 7).state, 'CLOSED');
+  assert.match(issueOf(r, 7).comments[0], /^loop-tidy: /);
+  assert.match(issueOf(r, 7).comments[0], /process\.exit\(0\)/);
+});
+
+test('tidy: a command that exits 3 refuses and leaves the issue open, with no write', () => {
+  const r = run(['tidy', '7', '-R', REPO, '--command', 'node -e "process.exit(3)"'], world([{ n: 7 }]));
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /exit code 3/);
+  assert.equal(issueOf(r, 7).state, 'OPEN');
+  assert.equal(r.writes.length, 0);
+});
+
+test('tidy: a closed issue refuses, and the command does not run', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'epic-loop-tidy-'));
+  writeFileSync(join(dir, 'mark.mjs'), "import { writeFileSync } from 'node:fs'; writeFileSync(process.argv[2], 'ran');\n");
+  const mark = join(dir, 'ran.txt');
+  const r = run(['tidy', '7', '-R', REPO, '--command', `node "${join(dir, 'mark.mjs')}" "${mark}"`], world([{ n: 7, state: 'CLOSED' }]));
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /#7 is closed/);
+  assert.throws(() => readFileSync(mark));
+  assert.equal(r.writes.length, 0);
+});
+
+test('tidy: an issue by another author refuses, the command does not run, and --rewrite writes nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'epic-loop-tidy-'));
+  writeFileSync(join(dir, 'mark.mjs'), "import { writeFileSync } from 'node:fs'; writeFileSync(process.argv[2], 'ran');\n");
+  writeFileSync(join(dir, 'body.md'), 'New\n');
+  const mark = join(dir, 'ran.txt');
+  const stranger = () => world([{ n: 7, author: 'stranger', labels: ['loop:needs-human'] }]);
+  const r = run(['tidy', '7', '-R', REPO, '--command', `node "${join(dir, 'mark.mjs')}" "${mark}"`], stranger());
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /#7 is by stranger, not by the owner/);
+  assert.throws(() => readFileSync(mark));
+  assert.equal(r.writes.length, 0);
+  const w = run(['tidy', '7', '-R', REPO, '--rewrite', join(dir, 'body.md'), '--reason', 'x'], stranger());
+  assert.equal(w.code, 1);
+  assert.equal(w.writes.length, 0);
+});
+
+test('tidy: --rewrite edits the body, removes loop:needs-human, and comments the reason', () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'epic-loop-tidy-')), 'body.md');
+  writeFileSync(file, 'The new body.\n');
+  const r = run(['tidy', '7', '-R', REPO, '--rewrite', file, '--reason', 'old approval step'],
+    world([{ n: 7, body: 'Old', labels: ['loop:needs-human', 'topic'] }], { labels: ['loop:needs-human', 'topic'] }));
+  assert.equal(r.code, 0, r.stderr);
+  const i = issueOf(r, 7);
+  assert.equal(i.body, 'The new body.\n');
+  assert.deepEqual(i.labels, ['topic']);
+  assert.equal(i.state, 'OPEN');
+  assert.match(i.comments[0], /^loop-tidy: .*old approval step/);
+});
+
+test('tidy: --rewrite with no --reason is bad usage, with no write', () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'epic-loop-tidy-')), 'body.md');
+  writeFileSync(file, 'New\n');
+  const r = run(['tidy', '7', '-R', REPO, '--rewrite', file], world([{ n: 7, labels: ['loop:needs-human'] }]));
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /tidy --rewrite needs --reason/);
+  assert.equal(r.writes.length, 0);
+});
+
+test('tidy: it needs exactly one of --command and --rewrite', () => {
+  for (const args of [[], ['--command', 'x', '--rewrite', 'y', '--reason', 'z']]) {
+    const r = run(['tidy', '7', '-R', REPO, ...args], world([{ n: 7 }]));
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /exactly one of --command and --rewrite/);
+    assert.equal(r.writes.length, 0);
+  }
 });

@@ -35,22 +35,31 @@
 //   link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>]   (an existing link is reported, not an error)
 //   unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>]                remove "blocked by" links (rewire to the real order)
 //   create <manifest.json> [--dry-run]             create an epic, its phases and tasks, and every link (references/plan.md)
+//   card <file>                                    open the goal card in <file> as the issue "Goal card: <title>", label goal-card;
+//                                                  refuses a bad card (spec 2.13) or a second open card; prints {"card":<n>}
+//   tidy <n> --command "<cmd>"                     run the command; only if it exits 0, close <n> with a loop-tidy: comment;
+//                                                  both forms of tidy refuse an issue by anyone but the owner of the repository
+//   tidy <n> --rewrite <file> --reason "<why>"     replace the body, remove loop:needs-human, and comment the reason
 //
 // Options: -R <owner/name> (default: the repository of the current directory), --stale-hours <h> (default 6),
 // --max-attempts <k> (default 3). Labels: loop:in-progress and loop:needs-human; a repository that already has
 // loop:dang-lam / loop:can-nguoi keeps using those. Also read, never written: in-progress (taken), frozen, on-hold, blocked (held). Exit codes: 0 ok, 1 refused or not done, 2 bad usage or GitHub error.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { cardBody, cardProblems } from './card.mjs';
 
 const WORK = ['loop:in-progress', 'loop:dang-lam'];    // the first name is the one created when a repo has none
 const HUMAN = ['loop:needs-human', 'loop:can-nguoi'];
 // Read, never written: other labels that already mean "someone is on it" or "do not take this".
 const WORK_SEEN = [...WORK, 'in-progress'];
 const HELD = [...HUMAN, 'frozen', 'on-hold', 'blocked'];
+const CARD_LABEL = 'goal-card';
+const TIDY_TIMEOUT_MS = 10 * 60 * 1000;
 const STYLE = {
+  [CARD_LABEL]: { color: '1D76DB', description: 'A goal card: a proposed goal that waits for the console' },
   'loop:in-progress': { color: 'FBCA04', description: 'A loop run is working on this task' },
   'loop:needs-human': { color: 'D93F0B', description: 'Waiting for a human: a loop never takes this task' },
 };
@@ -114,6 +123,8 @@ const Q_COMMENTS = `query Comments($owner: String!, $name: String!, $number: Int
   issue(number: $number) { comments(last: 100) { nodes { body } } } } }`;
 const Q_BODY = `query IssueBody($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { body } } }`;
+const Q_AUTHOR = `query IssueAuthor($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+  issue(number: $number) { author { login } } } }`;
 const Q_CLOSING_FILES = `query ClosingFiles($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
   issue(number: $number) { closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { merged files(first: 100) { totalCount nodes { path } } } } } } }`;
 const Q_CLOSING = `query Closing($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
@@ -680,6 +691,44 @@ function cmdCreate(manifestPath, flags) {
   console.log(JSON.stringify({ epic: numbers.get(epicKey), issues: Object.fromEntries(items.map((i) => [i.key, numbers.get(i.key)])) }));
 }
 
+// The goal writer's one write of a card (references/goal-writer.md). Everything is checked before the first write.
+function cmdCard(file, repoOf) {
+  let text;
+  try { text = readFileSync(resolve(file), 'utf8'); } catch (e) { throw new Refused(`cannot read ${file}: ${e.message}`); }
+  let card;
+  try { card = JSON.parse(text); } catch (e) { throw new Refused(`${file} is not valid JSON: ${e.message}`); }
+  const problems = cardProblems(card);
+  if (problems.length) throw new Refused(`bad goal card: ${problems.join('; ')}`);
+  const repo = repoOf();
+  const open = JSON.parse(gh(['issue', 'list', '-R', repo, '--state', 'open', '--label', CARD_LABEL, '--json', 'number', '--limit', '1']));
+  if (open.length) throw new Refused(`goal card #${open[0].number} is open: one repository holds one card at a time`);
+  const label = ensureLabel(repo, [CARD_LABEL]);
+  const url = gh(['issue', 'create', '-R', repo, '--title', `Goal card: ${card.title}`, '--body-file', bodyFile(cardBody(card)), '--label', label]);
+  console.log(JSON.stringify({ card: Number(url.trim().split('/').pop()) }));
+}
+
+function cmdTidy(repo, n, flags) {
+  if (Boolean(flags.command) === Boolean(flags.rewrite)) throw new Usage('tidy needs exactly one of --command and --rewrite');
+  if (flags.rewrite && !flags.reason) throw new Usage('tidy --rewrite needs --reason "<why>"');
+  const body = flags.rewrite ? readFileSync(resolve(flags.rewrite), 'utf8') : null;
+  const info = issueQuery(Q_CLOSING, repo, n);
+  if (info.state !== 'OPEN') throw new Refused(`#${n} is closed`);
+  // An issue by anyone else is untrusted: a stranger's text must never choose what runs or what closes.
+  const author = issueQuery(Q_AUTHOR, repo, n).author?.login;
+  if (author !== repo.split('/')[0]) throw new Refused(`#${n} is by ${author ?? 'an unknown author'}, not by the owner of ${repo}: tidy leaves it as it is`);
+  if (flags.command) {
+    const r = spawnSync(flags.command, { shell: true, encoding: 'utf8', timeout: TIDY_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+    if (r.status !== 0) throw new Refused(`#${n} stays open: the command ended with exit code ${r.status ?? r.signal ?? r.error?.message}`);
+    closeIssue(repo, n, `loop-tidy: this command exited 0, so the issue is fixed: \`${flags.command}\``);
+    console.log(JSON.stringify({ tidied: n, closed: true }));
+    return;
+  }
+  gh(['issue', 'edit', String(n), '-R', repo, '--body-file', bodyFile(body)]);
+  for (const l of info.labels.nodes.map((x) => x.name).filter((x) => HUMAN.includes(x))) gh(['issue', 'edit', String(n), '-R', repo, '--remove-label', l]);
+  comment(repo, n, `loop-tidy: the body was rewritten: ${flags.reason}`);
+  console.log(JSON.stringify({ tidied: n, closed: false }));
+}
+
 // ---------- main
 
 const currentRepo = () => JSON.parse(gh(['repo', 'view', '--json', 'nameWithOwner'])).nameWithOwner;
@@ -712,7 +761,7 @@ function parse(argv) {
 const USAGE = 'usage: epic.mjs status <epic> [--json] | next <epic> [--dry-run] [--parallel] [--probe] | claim <task> [--epic <n>] [--note "..."] [--parallel] | ' +
   'release <task> --reason "..." [--needs-human] [--found <n,...>] [--if-claimed] [--excused] | check <task> [--dry-run] [--gate] [--evidence <path> --heading "..."] | ' +
   'link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>] | unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>] | ' +
-  'create <manifest.json> [--dry-run]   (options: -R owner/name, --stale-hours, --max-attempts)';
+  'create <manifest.json> [--dry-run] | card <file> | tidy <n> --command "<cmd>" | tidy <n> --rewrite <file> --reason "..."   (options: -R owner/name, --stale-hours, --max-attempts)';
 
 try {
   const { flags, pos } = parse(process.argv.slice(2));
@@ -727,6 +776,8 @@ try {
     case 'link': { const n = num(arg, 'an issue number'); cmdLink(repo(), n, flags); break; }
     case 'unlink': { const n = num(arg, 'an issue number'); cmdUnlink(repo(), n, flags); break; }
     case 'create': { if (!arg) throw new Usage('create needs a manifest file'); cmdCreate(arg, flags); break; }
+    case 'card': { if (!arg) throw new Usage('card needs a card file'); cmdCard(arg, repo); break; }
+    case 'tidy': { const n = num(arg, 'an issue number'); cmdTidy(repo(), n, flags); break; }
     default: throw new Usage(USAGE);
   }
 } catch (e) {

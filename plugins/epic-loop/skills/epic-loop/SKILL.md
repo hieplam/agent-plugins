@@ -46,6 +46,7 @@ Read [references/goal-loop.md](references/goal-loop.md) before you plan or drive
 | New work that needs more than one PR, or "create an epic", "split this into issues", "plan it so the loop can do it" | **Plan** it as an epic | [references/goal-loop.md](references/goal-loop.md), then [references/plan.md](references/plan.md) |
 | A loop prompt: "run one tick of the epic loop on epic #N", "do the next task of epic #N" | **Tick**: at most one task, then end | [references/tick.md](references/tick.md) |
 | "drive epic #N until it is done", "use /loop, one subagent per issue", "finish the epic as soon as possible" | **Drive** the loop from this session | [references/goal-loop.md](references/goal-loop.md), then [references/drive.md](references/drive.md) |
+| `Run the goal writer on <o/r>, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING.` | **Write** the next goal card and clean the queue, then end | [references/goal-writer.md](references/goal-writer.md) |
 | "where is epic #N", "what is next" | `E status <epic>`, then report (below) | |
 
 Read the reference in full before acting. It is short, and each step is there because skipping it caused a problem before.
@@ -85,6 +86,9 @@ add `-R owner/name`.
 | `E link <issue> [--parent <n>] [--blocked-by <n,...>] [--blocks <n,...>]` | Adds an issue to the graph, for example one found partway through. A link that already exists is reported as `(already)`, not an error. |
 | `E unlink <issue> [--blocked-by <n,...>] [--blocks <n,...>]` | Removes "blocked by" links, to rewire a plan's convenience chain to the real dependencies. |
 | `E create <manifest.json> [--dry-run]` | Creates an epic, or phases and tasks under an existing one, with every link (see references/plan.md). |
+| `E card <file>` | Opens the goal card in `<file>` (references/goal-writer.md). Refuses a bad card or a second open card. |
+| `E tidy <n> --command "<cmd>"` | Runs the command, and closes the issue only if the command exits 0. |
+| `E tidy <n> --rewrite <file> --reason "..."` | Replaces the body of an old task, removes `loop:needs-human`, and comments the reason. |
 
 Exit codes: 0 means ok, 1 means refused or not done, 2 means bad usage or a GitHub error. The script also reads
 labels that a repository may already use: the older loop labels `loop:dang-lam` and `loop:can-nguoi`, `in-progress`

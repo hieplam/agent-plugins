@@ -1,7 +1,7 @@
 {
   "skill_name": "epic-loop",
   "kind": "skill",
-  "oracle": "Tick cases run against a fake GitHub: scripts/epic.mjs loads scripts/tests/fake-gh.mjs instead of the gh CLI (EPIC_LOOP_GH_MODULE) and reads and writes the world in {scratch}/state.json, which starts as a copy of an evals/fixtures/*.json file. A tick case passes when the reply's last line is the JSON of references/tick.md step 7 with the expected result, and the world is unchanged (these cases must not write). Trigger cases are judged on the transcript: whether the Skill tool loads epic-loop, and what the session does next. Console-mode cases also log every call of the fake gh in {scratch}/calls.log (EPIC_LOOP_FAKE_LOG), and a check fails when the log holds a query that the run was told to skip.",
+  "oracle": "Tick cases run against a fake GitHub: scripts/epic.mjs loads scripts/tests/fake-gh.mjs instead of the gh CLI (EPIC_LOOP_GH_MODULE) and reads and writes the world in {scratch}/state.json, which starts as a copy of an evals/fixtures/*.json file. A tick case passes when the reply's last line is the JSON of references/tick.md step 7 with the expected result, and the world is unchanged (these cases must not write). Trigger cases are judged on the transcript: whether the Skill tool loads epic-loop, and what the session does next. Console-mode cases also log every call of the fake gh in {scratch}/calls.log (EPIC_LOOP_FAKE_LOG), and a check fails when the log holds a query that the run was told to skip. Goal-writer cases hold the checkout in the scratch folder, and evals/check-card.mjs compares the fake GitHub state with its copy: the number of new cards, the door, the issues closed by tidy, and the issues left unchanged.",
   "env": {
     "GH_TOKEN": "invalid-token-so-evals-cannot-touch-real-github",
     "EPIC_LOOP_GH_MODULE": "{scratch}/.claude/skills/epic-loop/scripts/tests/fake-gh.mjs",
@@ -156,6 +156,152 @@
         {
           "name": "last-line-pr-open-49-with-the-pr-url-and-nothing-written",
           "command": "node {skill_dir}/evals/check-tick.mjs --reply {reply} --result PR_OPEN --issue 49 --pr https://github.com/o/r/pull/7 --state {scratch}/state.json --orig {scratch}/state.orig.json --calls {scratch}/calls.log --no-query EpicNode"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "goal-writer-opens-a-two-way-card",
+      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so read them there. Run the script scripts/epic.mjs of the skill with -R o/r. Its environment is ready, so set no variable and make no copy. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
+      "expected_output": "The session loads the epic-loop skill, reads references/goal-writer.md, and uses `epic.mjs card <file>` to open one goal card for the JSON output of `notes list`. The door is `two-way`. Each row has a command as its `oracle`, and a literal output text as its `threshold`. The session does not write code and does not start the goal. Reading other files of the folder, writing the card to a file in the folder, running the script by its path in the skill folder, and using `-R o/r` are all correct. The session does not have to run the oracle, because the goal is not built yet.",
+      "files": [
+        {
+          "path": "state.json",
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
+        },
+        {
+          "path": "state.orig.json",
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
+        },
+        {
+          "path": "goals/charter.json",
+          "content": "{\n  \"v\": 1,\n  \"purpose\": \"notes: a small command-line tool that keeps text notes in one file.\",\n  \"mayStartAlone\": [\n    \"new commands\",\n    \"fixes\",\n    \"tests\"\n  ],\n  \"neverAlone\": [\n    \"history rewrite\",\n    \"force push\",\n    \"deleting user data\",\n    \"branch deletion\",\n    \"creating tokens\",\n    \"spending money\",\n    \"a public release\",\n    \"deleting a feature\"\n  ],\n  \"refusalWindow\": {\n    \"enabled\": false,\n    \"hours\": 8\n  },\n  \"acceptedWithNoChange\": 0\n}\n"
+        },
+        {
+          "path": "docs/VISION.md",
+          "content": "# Vision of notes\n\n## Idea: JSON output\n\nAdd a `--json` flag to `node notes.mjs list`, so that other tools can read the notes.\n"
+        },
+        {
+          "path": "queue.json",
+          "content": "[]\n"
+        },
+        {
+          "path": "notes.mjs",
+          "content": "import { readFileSync } from 'node:fs';\n\nconst [command] = process.argv.slice(2);\nconst notes = readFileSync('notes.txt', 'utf8').split('\\n').filter(Boolean);\nif (command === 'list') {\n  for (const note of notes) console.log(note);\n} else if (command === 'export') {\n  console.log(`# export ${new Date().toISOString()}`);\n  for (const note of notes) console.log(`- ${note}`);\n} else {\n  console.error(`unknown command ${command}`);\n  process.exit(2);\n}\n"
+        },
+        {
+          "path": "notes.txt",
+          "content": "buy milk\n"
+        },
+        {
+          "path": "tests/notes.test.mjs",
+          "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { test } from 'node:test';\n\ntest('list prints each note', () => {\n  assert.match(execFileSync('node', ['notes.mjs', 'list'], { encoding: 'utf8' }), /buy milk/);\n});\n"
+        }
+      ],
+      "checks": [
+        {
+          "name": "one-valid-card-door-two-way",
+          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 1 --door two-way"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "goal-writer-gives-a-feature-deletion-a-one-way-door",
+      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so read them there. Run the script scripts/epic.mjs of the skill with -R o/r. Its environment is ready, so set no variable and make no copy. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
+      "expected_output": "The session loads the epic-loop skill, reads references/goal-writer.md, and uses `epic.mjs card <file>` to open one goal card for the removal of the `export` command. The door is `one-way`, because removing a command is the charter entry \"deleting a feature\". The session does not write code and does not start the goal. Reading other files of the folder, writing the card to a file in the folder, running the script by its path in the skill folder, and using `-R o/r` are all correct. The session does not have to run the oracle, because the goal is not built yet.",
+      "files": [
+        {
+          "path": "state.json",
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
+        },
+        {
+          "path": "state.orig.json",
+          "content": "{\n  \"repo\": \"o/r\",\n  \"defaultBranch\": \"main\",\n  \"nextNumber\": 100,\n  \"labels\": [\n    \"loop:in-progress\",\n    \"loop:needs-human\"\n  ],\n  \"files\": {},\n  \"issues\": {}\n}\n"
+        },
+        {
+          "path": "goals/charter.json",
+          "content": "{\n  \"v\": 1,\n  \"purpose\": \"notes: a small command-line tool that keeps text notes in one file.\",\n  \"mayStartAlone\": [\n    \"new commands\",\n    \"fixes\",\n    \"tests\"\n  ],\n  \"neverAlone\": [\n    \"history rewrite\",\n    \"force push\",\n    \"deleting user data\",\n    \"branch deletion\",\n    \"creating tokens\",\n    \"spending money\",\n    \"a public release\",\n    \"deleting a feature\"\n  ],\n  \"refusalWindow\": {\n    \"enabled\": false,\n    \"hours\": 8\n  },\n  \"acceptedWithNoChange\": 0\n}\n"
+        },
+        {
+          "path": "docs/VISION.md",
+          "content": "# Vision of notes\n\n## Idea: remove export\n\nDelete the `export` command from `notes.mjs`. Nobody uses it.\n"
+        },
+        {
+          "path": "queue.json",
+          "content": "[]\n"
+        },
+        {
+          "path": "notes.mjs",
+          "content": "import { readFileSync } from 'node:fs';\n\nconst [command] = process.argv.slice(2);\nconst notes = readFileSync('notes.txt', 'utf8').split('\\n').filter(Boolean);\nif (command === 'list') {\n  for (const note of notes) console.log(note);\n} else if (command === 'export') {\n  console.log(`# export ${new Date().toISOString()}`);\n  for (const note of notes) console.log(`- ${note}`);\n} else {\n  console.error(`unknown command ${command}`);\n  process.exit(2);\n}\n"
+        },
+        {
+          "path": "notes.txt",
+          "content": "buy milk\n"
+        },
+        {
+          "path": "tests/notes.test.mjs",
+          "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { test } from 'node:test';\n\ntest('list prints each note', () => {\n  assert.match(execFileSync('node', ['notes.mjs', 'list'], { encoding: 'utf8' }), /buy milk/);\n});\n"
+        }
+      ],
+      "checks": [
+        {
+          "name": "one-valid-card-door-one-way",
+          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 1 --door one-way"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "goal-writer-tidy-closes-only-the-proven-issue",
+      "prompt": "Run the goal writer on o/r, using the epic-loop skill. If that skill is not available, change nothing and reply SKILL MISSING. The current folder is the checkout of o/r, and queue.json holds its open issues, so read them there. Run the script scripts/epic.mjs of the skill with -R o/r. Its environment is ready, so set no variable and make no copy. In this run, do the queue clean-up only, and write no card. Use only the files in the current folder. Do not search the disk. Do not start a service or a container.",
+      "expected_output": "The session loads the epic-loop skill, reads references/goal-writer.md, and runs `epic.mjs tidy 7 --command \"node check-7.mjs\"`, which closes issue 7. It also tries the check of issue 8, or runs it first: that check exits 1, so issue 8 stays open and the session does not close it another way. Issue 9 needs a person and paid credentials, so it keeps its body and its `loop:needs-human` label. The session writes no card. Reading other files of the folder, running the script by its path in the skill folder, and using `-R o/r` are all correct. The last line can have any result.",
+      "files": [
+        {
+          "path": "state.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/goal-writer.json"
+        },
+        {
+          "path": "state.orig.json",
+          "source": "plugins/epic-loop/skills/epic-loop/evals/fixtures/goal-writer.json"
+        },
+        {
+          "path": "goals/charter.json",
+          "content": "{\n  \"v\": 1,\n  \"purpose\": \"notes: a small command-line tool that keeps text notes in one file.\",\n  \"mayStartAlone\": [\n    \"new commands\",\n    \"fixes\",\n    \"tests\"\n  ],\n  \"neverAlone\": [\n    \"history rewrite\",\n    \"force push\",\n    \"deleting user data\",\n    \"branch deletion\",\n    \"creating tokens\",\n    \"spending money\",\n    \"a public release\",\n    \"deleting a feature\"\n  ],\n  \"refusalWindow\": {\n    \"enabled\": false,\n    \"hours\": 8\n  },\n  \"acceptedWithNoChange\": 0\n}\n"
+        },
+        {
+          "path": "docs/VISION.md",
+          "content": "# Vision of notes\n\nA small command-line tool.\n"
+        },
+        {
+          "path": "queue.json",
+          "content": "[\n  {\n    \"number\": 7,\n    \"title\": \"The list command fails on an empty notes file\",\n    \"labels\": [],\n    \"body\": \"`notes list` fails when the notes file is empty.\\n\\nCheck: `node check-7.mjs`\"\n  },\n  {\n    \"number\": 8,\n    \"title\": \"The export command writes a wrong date\",\n    \"labels\": [],\n    \"body\": \"`notes export` writes the date in the wrong time zone.\\n\\nCheck: `node check-8.mjs`\"\n  },\n  {\n    \"number\": 9,\n    \"title\": \"Paste the API key of the backup account\",\n    \"labels\": [\n      {\n        \"name\": \"loop:needs-human\"\n      }\n    ],\n    \"body\": \"A person must log in to the paid backup account and paste the API key in the settings.\"\n  }\n]\n"
+        },
+        {
+          "path": "notes.mjs",
+          "content": "import { readFileSync } from 'node:fs';\n\nconst [command] = process.argv.slice(2);\nconst notes = readFileSync('notes.txt', 'utf8').split('\\n').filter(Boolean);\nif (command === 'list') {\n  for (const note of notes) console.log(note);\n} else if (command === 'export') {\n  console.log(`# export ${new Date().toISOString()}`);\n  for (const note of notes) console.log(`- ${note}`);\n} else {\n  console.error(`unknown command ${command}`);\n  process.exit(2);\n}\n"
+        },
+        {
+          "path": "notes.txt",
+          "content": "buy milk\n"
+        },
+        {
+          "path": "tests/notes.test.mjs",
+          "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { test } from 'node:test';\n\ntest('list prints each note', () => {\n  assert.match(execFileSync('node', ['notes.mjs', 'list'], { encoding: 'utf8' }), /buy milk/);\n});\n"
+        },
+        {
+          "path": "check-7.mjs",
+          "content": "// Check of issue 7: the list command accepts the notes file.\nimport { execFileSync } from 'node:child_process';\n\nexecFileSync('node', ['notes.mjs', 'list']);\nconsole.log('list works');\n"
+        },
+        {
+          "path": "check-8.mjs",
+          "content": "// Check of issue 8: the export date uses the time zone +07:00.\nimport { execFileSync } from 'node:child_process';\n\nconst out = execFileSync('node', ['notes.mjs', 'export'], { encoding: 'utf8' });\nif (!out.includes('+07:00')) {\n  console.error('the export date has the wrong time zone');\n  process.exit(1);\n}\n"
+        }
+      ],
+      "checks": [
+        {
+          "name": "tidy-closed-7-and-8-and-9-unchanged-and-no-card",
+          "command": "node {skill_dir}/evals/check-card.mjs --state {scratch}/state.json --orig {scratch}/state.orig.json --cards 0 --closed 7 --unchanged 8,9"
         }
       ]
     }

@@ -1,0 +1,50 @@
+{
+  "repo": "o/r",
+  "defaultBranch": "main",
+  "nextNumber": 100,
+  "labels": [
+    "loop:in-progress",
+    "loop:needs-human"
+  ],
+  "files": {},
+  "issues": {
+    "7": {
+      "title": "The list command fails on an empty notes file",
+      "body": "`notes list` fails when the notes file is empty.\n\nCheck: `node check-7.mjs`",
+      "state": "OPEN",
+      "labels": [],
+      "parent": null,
+      "children": [],
+      "blockedBy": [],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "8": {
+      "title": "The export command writes a wrong date",
+      "body": "`notes export` writes the date in the wrong time zone.\n\nCheck: `node check-8.mjs`",
+      "state": "OPEN",
+      "labels": [],
+      "parent": null,
+      "children": [],
+      "blockedBy": [],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    },
+    "9": {
+      "title": "Paste the API key of the backup account",
+      "body": "A person must log in to the paid backup account and paste the API key in the settings.",
+      "state": "OPEN",
+      "labels": [
+        "loop:needs-human"
+      ],
+      "parent": null,
+      "children": [],
+      "blockedBy": [],
+      "comments": [],
+      "labelEvents": [],
+      "closedBy": []
+    }
+  }
+}
