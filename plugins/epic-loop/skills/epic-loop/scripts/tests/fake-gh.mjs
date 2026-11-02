@@ -120,6 +120,14 @@ function api(s, args) {
 
 function issueCmd(s, args) {
   const sub = args[1];
+  if (sub === 'list') {
+    const state = (opt(args, '--state') || 'open').toUpperCase();
+    const labels = opts(args, '--label');
+    const rows = Object.entries(s.issues)
+      .filter(([, i]) => (state === 'ALL' || i.state === state) && labels.every((l) => (i.labels || []).includes(l)))
+      .map(([n, i]) => ({ number: Number(n), title: i.title, body: i.body || '', labels: (i.labels || []).map((name) => ({ name })) }));
+    return JSON.stringify(rows.slice(0, Number(opt(args, '--limit') || 30)));
+  }
   if (sub === 'create') {
     const n = s.nextNumber++;
     const labels = opts(args, '--label');
